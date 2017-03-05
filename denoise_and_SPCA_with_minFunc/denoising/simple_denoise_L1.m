@@ -3,7 +3,7 @@ function img_denoised = simple_denoise_L1(img_noisy, lambda, D)
     % configure optimization
     opts = [];
     opts.display = 'iter'; % or off
-    
+
     x0 = img_noisy(:);
     % we should create a function that receives vector x and returns value
     % with gradient. All data handling is encapsulated in lambda-expression
@@ -15,8 +15,6 @@ end
 
 function [f, grad] = eval_cost_and_gradient(x, img_noisy, lambda, D)
     Dx = D * x;
-    f = sum((x - img_noisy(:)).^2)/2 + lambda/2 * sum(abs(Dx)); 
+    f = sum((x - img_noisy(:)).^2)/2 + lambda/2 * sum(abs(Dx));
     grad = x - img_noisy(:) + lambda * (D' * Dx);
-    
-    %Test commit
 end
