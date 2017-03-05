@@ -22,34 +22,34 @@ imagesc(grad2);
 img_noisy = img + randn(size(img)) * 0.2;
 lambda = 1.1;
 
+[lambda_min_L2, rmse_min_L2, lambda_L2, rmse_L2] = minimize_RMSE_L2(img_noisy,img,D);
+img_denoised_L2 = simple_denoise_L2(img_noisy, lambda_min_L2, D);
+
 subplot(131);
 imagesc(img); caxis([0, 1]);
 subplot(132);
 imagesc(img_noisy); caxis([0, 1]);
 subplot(133);
-imagesc(img_denoised); caxis([0, 1]);
-
-[lambda_min_L2, rmse_min_L2, lambda_L2, rmse_L2] = minimize_RMSE_L2(img_noisy,img,D);
+imagesc(img_denoised_L2); caxis([0, 1]);
 
 rmse0 = sqrt(sum( (img(:) - img_noisy(:)).^2 ));
-rmse1 = sqrt(sum( (img(:) - img_denoised(:)).^2 ));
+rmse1 = sqrt(sum( (img(:) - img_denoised_L2(:)).^2 ));
 %fprintf('RMSE w/o denoising %.5f\nRMSE with L2 denoising %.5f\n', rmse0, rmse1);
 
 %% Denoise with L_1 norm
 img_noisy = img + randn(size(img)) * 0.2;
 %lambda = 1.6;
-img_denoised = simple_denoise_L1(img_noisy, lambda, D);
+[lambda_min_L1, rmse_min_L1, lambda_L1, rmse_L1] = minimize_RMSE_L1(img_noisy,img,D);
+img_denoised_L1 = simple_denoise_L1(img_noisy, lambda_min_L1, D);
 subplot(131);
 imagesc(img); caxis([0, 1]);
 subplot(132);
 imagesc(img_noisy); caxis([0, 1]);
 subplot(133);
-imagesc(img_denoised); caxis([0, 1]);
-
-[lambda_min_L1, rmse_min_L1, lambda_L1, rmse_L1] = minimize_RMSE_L1(img_noisy,img,D);
+imagesc(img_denoised_L1); caxis([0, 1]);
 
 rmse0 = sqrt(sum( (img(:) - img_noisy(:)).^2 ));
-rmse1 = sqrt(sum( (img(:) - img_denoised(:)).^2 ));
+rmse1 = sqrt(sum( (img(:) - img_denoised_L1(:)).^2 ));
 %fprintf('RMSE w/o denoising %.5f\nRMSE with L1 denoising %.5f\n', rmse0, rmse1);
 %% plot RMSE vs Lambda
 subplot(121)
