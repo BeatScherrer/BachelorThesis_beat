@@ -22,7 +22,7 @@ function [f, grad] = eval_cost_and_gradient(x, A, lambda)
     
     grad_nuclear_norm = sU * sV';
     error('Insert correct gradient here');
-    grad_l1_norm = []; % ????
+    grad_l1_norm = ; % ????
     grad = grad_nuclear_norm + lambda * grad_l1_norm;
     grad = grad(:); % everything should be stretched into vector
 end

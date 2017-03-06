@@ -16,5 +16,5 @@ end
 function [f, grad] = eval_cost_and_gradient(x, img_noisy, lambda, D)
     Dx = D * x;
     f = sum((x - img_noisy(:)).^2)/2 + lambda/2 * sum(Dx.^2); 
-    grad = x - img_noisy(:) + lambda * (D' * Dx);
+    grad = x - img_noisy(:) + lambda * (D' * Dx); 
 end

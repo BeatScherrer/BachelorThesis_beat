@@ -51,6 +51,16 @@ imagesc(img_denoised_L1); caxis([0, 1]);
 rmse0 = sqrt(sum( (img(:) - img_noisy(:)).^2 ));
 rmse1 = sqrt(sum( (img(:) - img_denoised_L1(:)).^2 ));
 %fprintf('RMSE w/o denoising %.5f\nRMSE with L1 denoising %.5f\n', rmse0, rmse1);
+%%
+img_tv = simple_denoise_L1(img_noisy, 0.3, D);
+imagesc([img_noisy, img_tv]); colormap gray; 
+caxis([0, 1]);
+figure;
+plot(img(100,:), 'r');
+hold on;
+plot(img_noisy(100,:), 'b');
+plot(img_tv(100, :), 'k');
+
 %% plot RMSE vs Lambda
 subplot(121)
 plot(lambda_L1, rmse_L1)
