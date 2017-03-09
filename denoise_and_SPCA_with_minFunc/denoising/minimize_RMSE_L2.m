@@ -1,6 +1,5 @@
-function [lambda_min, rmse_min, lambda, rmse] = minimize_RMSE_L2(img_noisy,img, D)
+function [lambda_min, rmse_min, lambda, rmse] = minimize_RMSE_L2(img_noisy,img, D, lambda)
     
-lambda = 1:0.01:3;
 rmse = zeros(size(lambda));
 
 for i=1:size(lambda,2)
