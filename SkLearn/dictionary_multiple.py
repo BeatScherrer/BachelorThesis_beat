@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Tue Mar 21 15:16:51 2017
+
+@author: beats
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Fri Mar 17 09:51:25 2017
 
 @author: beats
