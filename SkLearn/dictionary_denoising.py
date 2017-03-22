@@ -13,6 +13,7 @@ from time import time
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
+from PIL import Image
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
 from sklearn.feature_extraction.image import extract_patches_2d
@@ -36,7 +37,7 @@ face = face / 255
 
 # downsample for higher speed. third argument in array parameter = step size
 face = face[::2, ::2] + face[1::2, ::2] + face[::2, 1::2] + face[1::2, 1::2]
-face /= 4.0
+face = face / 4.0
 height, width = face.shape
 
 # Distort the right half of the image

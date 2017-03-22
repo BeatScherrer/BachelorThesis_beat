@@ -28,36 +28,46 @@ from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
 
 
-try:
-    p = Path('../Sklearn/images/cartoon/cartoon_5.jpg')
-    img = Image.open(p)
-    img = img.convert('L')
-    img = np.asarray(img)
-    
-except:
-    print('Error while reading Image!')
+p = '../Sklearn/images/cartoon/'
+img1 = Image.open(p + 'db1.jpg')
+img1 = img1.convert('L')
+img1 = np.array(img1)
+
+img2 = Image.open(p + 'db2.jpg')
+img2 = img2.convert('L')
+img2 = np.array(img2)
+
+img3 = Image.open(p + 'db3.jpg')
+img3 = img3.convert('L')
+img3 = np.array(img3)
+
+images = np.array([img1,img2,img3])
 
 # Convert from uint8 representation with values between 0 and 255 to
 # a floating point representation with values between 0 and 1.
-img = img / 255
+images = images / 255
 # downsample for higher speed. third argument in array parameter = step size
-img = img[::2, ::2] + img[1::2, ::2] + img[::2, 1::2] + img[1::2, 1::2]
-img /= 4.0
-height, width = img.shape
 
-# Distort the right half of the image
-print('Distorting image...')
-distorted = img.copy()
-distorted[:, width // 2:] += 0.075 * np.random.randn(height, width // 2)
+'''img1 = img1[::2, ::2] + img1[1::2, ::2] + img1[::2, 1::2] + img1[1::2, 1::2]
+img1 = img1/4.0
+img2 = img2[::2, ::2] + img2[1::2, ::2] + img2[::2, 1::2] + img2[1::2, 1::2]
+img2 = img2/4.0
+img3 = img3[::2, ::2] + img3[1::2, ::2] + img3[::2, 1::2] + img3[1::2, 1::2]
+img3 = img3/4.0'''
 
-# Extract all reference patches from the left half of the image
+height, width = img1.shape
+
+# Extract all reference patches from the whole image of all images
 print('Extracting reference patches...')
 t0 = time()
 patch_size = (5, 5)
-data = extract_patches_2d(distorted[:, :width // 2], patch_size)
+data1 = extract_patches_2d(img1, patch_size)
+data2 = extract_patches_2d(img2, patch_size)
+data3 = extract_patches_2d(img3, patch_size)
+data = np.concatenate((data1,data2,data3))
 data = data.reshape(data.shape[0], -1)
-data -= np.mean(data, axis=0)
-data /= np.std(data, axis=0)
+data = data - np.mean(data, axis=0)
+data = data / np.std(data, axis=0)
 print('done in %.2fs.' % (time() - t0))
 
 print('Learning the dictionary...')
@@ -67,6 +77,7 @@ V = dico.fit(data).components_
 dt = time() - t0
 print('done in %.2fs.' % dt)
 
+# plot the learned dictionary with atoms as patch_size patches
 plt.figure(figsize=(4.2, 4))
 for i, comp in enumerate(V[:100]):
     plt.subplot(10, 10, i + 1)
@@ -79,31 +90,13 @@ plt.suptitle('Dictionary learned from face patches\n' +
              fontsize=16)
 plt.subplots_adjust(0.08, 0.02, 0.92, 0.85, 0.08, 0.23)
 
-def show_with_diff(image, reference, title):
-    """Helper function to display denoising"""
-    plt.figure(figsize=(5, 3.3))
-    plt.subplot(1, 2, 1)
-    plt.title('Image')
-    plt.imshow(image, vmin=0, vmax=1, cmap=plt.cm.gray,
-               interpolation='nearest')
-    plt.xticks(())
-    plt.yticks(())
-    plt.subplot(1, 2, 2)
-    difference = image - reference
-
-    plt.title('Difference (norm: %.2f)' % np.sqrt(np.sum(difference ** 2)))
-    plt.imshow(difference, vmin=-0.5, vmax=0.5, cmap=plt.cm.PuOr,
-               interpolation='nearest')
-    plt.xticks(())
-    plt.yticks(())
-    plt.suptitle(title, size=16)
-    plt.subplots_adjust(0.02, 0.02, 0.98, 0.79, 0.02, 0.2)
-
-show_with_diff(distorted, img, 'Distorted image')
+# construct noisy image to be reconstructed with the above learned dictionary
+distorted = img2.copy()
+distorted = distorted + 0.075 * np.random.randn(height, width)
 
 print('Extracting noisy patches... ')
 t0 = time()
-data = extract_patches_2d(distorted[:, width // 2:], patch_size)
+data = extract_patches_2d(distorted, patch_size)
 data = data.reshape(data.shape[0], -1)
 intercept = np.mean(data, axis=0)
 data -= intercept
@@ -121,7 +114,7 @@ transform_algorithms = [
 reconstructions = {}
 for title, transform_algorithm, kwargs in transform_algorithms:
     print(title + '...')
-    reconstructions[title] = img.copy()
+    reconstructions[title] = img4.copy()
     t0 = time()
     dico.set_params(transform_algorithm=transform_algorithm, **kwargs)
     code = dico.transform(data)
@@ -132,11 +125,7 @@ for title, transform_algorithm, kwargs in transform_algorithms:
     if transform_algorithm == 'threshold':
         patches -= patches.min()
         patches /= patches.max()
-    reconstructions[title][:, width // 2:] = reconstruct_from_patches_2d(
-        patches, (height, width // 2))
+    reconstructions[title] = reconstruct_from_patches_2d(
+        patches, (height, width))
     dt = time() - t0
     print('done in %.2fs.' % dt)
-    show_with_diff(reconstructions[title], img,
-                   title + ' (time: %.1fs)' % dt)
-
-plt.show()
