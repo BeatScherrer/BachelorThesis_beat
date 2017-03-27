@@ -11,9 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 
-from learn_dictionary import train_dictionary
-from learn_dictionary import test_dictionary
-
 # import matlab data (johannes')
 try:
     imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
@@ -21,13 +18,13 @@ try:
 except:
     print('Error while loading images!')
 
-height, width, timesteps, persons = imgs.shape
+rows, cols, timesteps, persons = imgs.shape
     
 # Transform to k-Space
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
 
 # Train dictionary on fully sampled data
-V = learn_dictionary(imgs, n_components=100, patch_size=(5,5))
+V = train_dictionary(imgs, n_components=100, patch_size=(5,5))
 
 # Create undersampling Mask
 undersampling = 0.3
@@ -36,8 +33,8 @@ sample_mask = np.array([sample_mask]*height).transpose()
 
 # Apply to all timesteps and persons
 k_undersampled = k_imgs.copy()
-for i in range(1,imgs.shape[2]):
-    for j in range(1,imgs.shape[3]):
+for i in range(0,timesteps-1):
+    for j in range(0,persons-1):
         k_undersampled[:,:,i,j] = sample_mask * k_imgs[:,:,i,j]
 
 # Reconstruction via ifft2
