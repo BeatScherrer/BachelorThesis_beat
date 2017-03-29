@@ -24,17 +24,17 @@ rows, cols, timesteps, persons = imgs.shape
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
 
 # Train dictionary on fully sampled data
-V = train_dictionary(imgs, n_components=100, patch_size=(5,5))
+# V = train_dictionary(imgs, n_components=100, patch_size=(5,5))
 
 # Create undersampling Mask
 undersampling = 0.3
-sample_mask = np.random.choice([0, 1], size=height, p=[undersampling, 1-undersampling])
+sample_mask = np.random.choice([0, 1], size=rows, p=[undersampling, 1-undersampling])
 sample_mask = np.array([sample_mask]*height).transpose()
 
 # Apply to all timesteps and persons
 k_undersampled = k_imgs.copy()
-for i in range(0,timesteps-1):
-    for j in range(0,persons-1):
+for i in range(timesteps-1):
+    for j in range(persons-1):
         k_undersampled[:,:,i,j] = sample_mask * k_imgs[:,:,i,j]
 
 # Reconstruction via ifft2
