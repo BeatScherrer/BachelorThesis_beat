@@ -14,7 +14,7 @@ import scipy as sp
 # import matlab data (johannes')
 try:
     imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
-    imgs = imgs['imgs']
+    imgs = np.float64(imgs['imgs'])
 except:
     print('Error while loading images!')
 
@@ -29,7 +29,7 @@ k_imgs = np.fft.fft2(imgs, axes=(0,1))
 # Create undersampling Mask
 undersampling = 0.3
 sample_mask = np.random.choice([0, 1], size=rows, p=[undersampling, 1-undersampling])
-sample_mask = np.array([sample_mask]*height).transpose()
+sample_mask = np.array([sample_mask]*rows).transpose()
 
 # Apply to all timesteps and persons
 k_undersampled = k_imgs.copy()

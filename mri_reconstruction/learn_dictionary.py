@@ -10,10 +10,8 @@ from time import time
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
-from PIL import Image
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
-from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
 from sklearn.utils.testing import SkipTest
 from sklearn.utils.fixes import sp_version
@@ -37,48 +35,11 @@ def train_dictionary(images, n_components=100, patch_size=(5,5), train_percentag
     Returns the Dictionary V.
     
     '''
-    rows, cols, timesteps, persons = images.shape
-
-     # Extract patches from the images
-    print('Extracting Patches...')
-    t0 = time()
-    data = []
-    for i in range(0,int(np.floor(persons*train_percentage))):
-         for j in range(0,timesteps):
-             patches = extract_patches_2d(imgs[:,:,j,i], patch_size)
-             patches = patches.reshape(patches.shape[0], -1)
-             data.append(patches)
-            
-    data = np.array(data)
-    data = np.reshape(data,(-1,25))
-    dt = time() - t0
-    print("%d patches extracted in %.1fs" %(len(data), dt))
-        
-    # Learn the Dictionary on the extracted patches
-    print('Learning the Dictionary...')
-    t0 = time()
-    dico = MiniBatchDictionaryLearning(100, alpha=1, n_iter=500)
-    V = dico.fit(data).components_
-    dt = time() - t0
-
-    print('Dictionary trained on %d patches in %.2fs.' % (len(data), dt))    
     return V
 
 def test_dictionary(images, n_components, transform_algorithms, patch_size=(5,5), test_percentage=0.2):
     '''
     '''
-    
-    row, cols, timesteps, persons = images.shape
-    
-    #extract patches from images
-    
-    #reconstruct images using input transform algorithm
-    t0 = time()
-    
-    
-    dt = time() - t0
-
-    print('Tested on %d images in %.2fs.' %(images, dt))
     return
 
 
@@ -88,30 +49,37 @@ def test_dictionary(images, n_components, transform_algorithms, patch_size=(5,5)
 try:
     imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
     imgs = imgs['imgs']
+    imgs = np.float64(imgs)
 except:
     print('Error while loading images!')
 
 rows, cols, timesteps, persons = imgs.shape
-train_percentage = 0.8
-patch_size = (5,5)
+train_percentage = 0.1
 
  # Extract Data from the images        
 data = np.transpose(imgs, (2,0,1,3))
-data = np.reshape(data, (timesteps, -1))
-        
+training_data = data[:,:,:,:np.floor(persons*train_percentage)]
+training_data = np.reshape(training_data, (timesteps, -1))
+training_data = training_data.T
 # Learn the Dictionary on the extracted patches
 print('Learning the Dictionary...')
 t0 = time()
-dico = MiniBatchDictionaryLearning(100, alpha=1, n_iter=100)
-
-#################### set for loops for fitting over batches of data ##################################
-V = dico.partial_fit(data).components_
+b_sz = 10
+dico = MiniBatchDictionaryLearning(40, alpha=1, n_iter=10, batch_size=b_sz, verbose=1)
+print("Training Data shape: " + str(training_data.shape[0]) + " " + str(training_data.shape[1]))
+for i in range(int(training_data.shape[0]/b_sz)):
+    print("batch %d of %d"%(i, int(training_data.shape[0]/b_sz)))
+    batch = training_data[i*b_sz : (i+1)*b_sz, :]
+    V = dico.partial_fit(batch).components_
+    if i > 200:
+        break
 dt = time() - t0
 
-plt.figure(size=(30,30))
-for i, comp in enumerate(V[:100]):
-    plt.subplot(10, 10, i + 1)
-    plt.imshow(comp.reshape(patch_size), cmap=plt.cm.gray_r,
-               interpolation='nearest')
 
-print('Dictionary trained on %d patches in %.2fs.' % (len(data), dt))
+testing_data = np.abs(reconstructions_undersampled[:,:,:, 300])
+testing_data = np.reshape(testing_data, (timesteps, -1))
+testing_data = testing_data.T
+code = dico.transform(testing_data)
+rec = np.dot(code, V)
+img = np.reshape(rec, [rows, cols, timesteps])
+print('Dictionary trained on %d vectors in %.2fs.' % (len(training_data), dt))
