@@ -11,6 +11,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 
+from learn_dictionary import train_dictionary
+from learn_dictionary import test_dictionary
+from create_mask import create_mask
+
 # import matlab data (johannes')
 try:
     imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
@@ -22,29 +26,29 @@ rows, cols, timesteps, persons = imgs.shape
     
 # Transform to k-Space
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
+k_imgs = np.fft.fftshift(k_imgs)
 
 # Train dictionary on fully sampled data
-# V = train_dictionary(imgs, n_components=100, patch_size=(5,5))
+#V = train_dictionary(imgs, n_components=100, patch_size=(5,5))
 
-# Create undersampling Mask
-undersampling = 0.3
-sample_mask = np.random.choice([0, 1], size=rows, p=[undersampling, 1-undersampling])
-sample_mask = np.array([sample_mask]*rows).transpose()
+mask = create_mask(0.3,(rows,cols),'gaussian',sigma=10)
+plt.imshow(mask, cmap='gray')
 
-# Apply to all timesteps and persons
+# Apply mask to all timesteps and persons
 k_undersampled = k_imgs.copy()
 for i in range(timesteps-1):
     for j in range(persons-1):
-        k_undersampled[:,:,i,j] = sample_mask * k_imgs[:,:,i,j]
+        k_undersampled[:,:,i,j] = mask * k_imgs[:,:,i,j]
 
 # Reconstruction via ifft2
-reconstructions_undersampled = np.fft.ifft2(k_undersampled, axes=(0,1))
-reconstructions = np.fft.ifft2(k_imgs, axes=(0,1))
+reconstructions_undersampled = np.fft.ifft2(np.fft.ifftshift(k_undersampled), axes=(0,1))
+reconstructions = np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1))
 
 # Test dictionary
+#test = test_dictionary(reconstructions_undersampled,dict,)
 
 # Plot various Images
-plt.figure(figsize=(40,40))
+plt.figure(figsize=(20,20))
 plt.subplot(1,5,1)
 plt.imshow(imgs[:,:,1,10], cmap='gray')
 plt.subplot(1,5,2)
