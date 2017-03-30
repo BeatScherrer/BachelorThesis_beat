@@ -28,10 +28,8 @@ rows, cols, timesteps, persons = imgs.shape
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
 k_imgs = np.fft.fftshift(k_imgs)
 
+# Mask the k_space data
 mask = create_mask(0.3, (rows,cols), 'gaussian', sigma=20)
-plt.imshow(mask, cmap='gray')
-
-# Apply mask to all timesteps and persons
 k_undersampled = k_imgs.copy()
 for i in range(timesteps-1):
     for j in range(persons-1):

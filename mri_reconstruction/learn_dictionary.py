@@ -41,11 +41,12 @@ def train_dictionary(imgs, n_components=100, train_percentage = 0.8):
         print('Error while loading images!')
 
     rows, cols, timesteps, persons = imgs.shape
+    
     train_percentage = 0.1
 
-     # Extract Data from the images        
+    # Extract Data from the images        
     data = np.transpose(imgs, (2,0,1,3))
-    training_data = data[:,:,:,:np.floor(persons*train_percentage)]
+    training_data = data[:,:,:,:int(np.floor(persons*train_percentage))]
     training_data = np.reshape(training_data, (timesteps, -1))
     training_data = training_data.T
      
