@@ -7,16 +7,13 @@ Created on Mon Mar 27 14:22:40 2017
 
 from time import time
 
-import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
-from sklearn.feature_extraction.image import reconstruct_from_patches_2d
-from sklearn.utils.testing import SkipTest
-from sklearn.utils.fixes import sp_version
 
-def train_dictionary(imgs, n_components=100, patch_size=(5,5), train_percentage = 0.8): 
+
+def train_dictionary(imgs, n_components=100, train_percentage = 0.8): 
     '''
     learns dictionary consisting of n_components atoms of size patch_size of input images
     
@@ -66,20 +63,19 @@ def train_dictionary(imgs, n_components=100, patch_size=(5,5), train_percentage 
             break
     dt = time() - t0
     print('Dictionary learned in %.1fs' %dt)
-    return V
+    return dico,V
 
-def test_dictionary(imgs, V, transform_algorithms, patch_size=(5,5), test_percentage=0.2):
+def test_dictionary(imgs, dico, V):
     '''
     Parameters
     ----------
     imgs: input images, should be some kind of undersampled
     V: Dictionary learned from train_dictionary
     
-    
     '''
     rows, cols, timesteps, persons = imgs.shape
     
-    testing_data = np.abs(imgs[:,:,:, 300])
+    testing_data = np.abs(imgs[:,:,:,300])
     testing_data = np.reshape(testing_data, (timesteps, -1))
     testing_data = testing_data.T
     code = dico.transform(testing_data)
