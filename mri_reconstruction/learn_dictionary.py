@@ -32,39 +32,27 @@ def train_dictionary(imgs, n_components=100, train_percentage = 0.8):
     Returns the Dictionary V.
     
     '''
-    # import matlab data (johannes')
-    try:
-        imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
-        imgs = imgs['imgs']
-        imgs = np.float64(imgs)
-    except:
-        print('Error while loading images!')
-
-    rows, cols, timesteps, persons = imgs.shape
-    
-    train_percentage = 0.1
-
-    # Extract Data from the images        
+# Extract Data from the images     
+    rows, cols, timesteps, persons = imgs.shape    
+   
     data = np.transpose(imgs, (2,0,1,3))
+    print("data", data.shape)
     training_data = data[:,:,:,:int(np.floor(persons*train_percentage))]
     training_data = np.reshape(training_data, (timesteps, -1))
     training_data = training_data.T
-     
+ 
     # Learn the Dictionary on the extracted patches
     print('Learning the Dictionary...')
     t0 = time()
     b_sz = 10
-    dico = MiniBatchDictionaryLearning(40, alpha=1, n_iter=10, batch_size=b_sz, verbose=1)
-    print("Training Data shape: " + str(training_data.shape[0]) + " " + str(training_data.shape[1]))
-    for i in range(int(training_data.shape[0]/b_sz)):
-        print("batch %d of %d"%(i, int(training_data.shape[0]/b_sz)))
-        batch = training_data[i*b_sz : (i+1)*b_sz, :]
-        V = dico.partial_fit(batch).components_
-        if i > 200:
-            break
-    dt = time() - t0
-    print('Dictionary learned in %.1fs' %dt)
-    return dico,V
+    dico = MiniBatchDictionaryLearning(alpha=0.5, n_iter=500, batch_size=b_sz, n_components = n_components, verbose=2)
+    print("Training Data shape: ", training_data.shape)
+ 
+    print("Tr:", training_data.shape)
+ 
+    V = dico.fit(training_data).components_
+    
+    return dico, V
 
 def test_dictionary(imgs, dico, V):
     '''
@@ -76,12 +64,13 @@ def test_dictionary(imgs, dico, V):
     '''
     rows, cols, timesteps, persons = imgs.shape
     
-    testing_data = np.abs(imgs[:,:,:,300])
+    testing_data = np.transpose(np.abs(imgs[:,:,:,0]), (2, 0, 1))
     testing_data = np.reshape(testing_data, (timesteps, -1))
     testing_data = testing_data.T
     code = dico.transform(testing_data)
     rec = np.dot(code, V)
-    img = np.reshape(rec, [rows, cols, timesteps])
+    rec = np.reshape(rec.T, [timesteps, rows, cols])
+    rec = np.transpose(rec, (1, 2, 0))
+    img = rec
     return img
-
 

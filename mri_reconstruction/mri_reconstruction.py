@@ -29,7 +29,7 @@ k_imgs = np.fft.fft2(imgs, axes=(0,1))
 k_imgs = np.fft.fftshift(k_imgs)
 
 # Mask the k_space data
-mask = create_mask(0.3, (rows,cols), 'gaussian', sigma=20)
+mask = create_mask(0.5, (rows,cols), 'poisson', sigma=20)
 k_undersampled = k_imgs.copy()
 for i in range(timesteps-1):
     for j in range(persons-1):
@@ -46,21 +46,21 @@ dico, V = train_dictionary(imgs, n_components=100)
 test_img = test_dictionary(reconstructions_undersampled, dico, V)
 
 # Plot various Images
-plt.figure
+plt.figure(figsize=(30,30))
 plt.imshow(V,cmap='gray')
 plt.title('Dictionary')
-plt.figure(figsize=(20,20))
+plt.figure(figsize=(40,40))
 plt.subplot(1,5,1)
-plt.imshow(imgs[:,:,1,10], cmap='gray')
+plt.imshow(imgs[:,:,0,0], cmap='gray')
 plt.title('Reference Image')
 plt.subplot(1,5,2)
-plt.imshow(np.log(np.abs(k_imgs[:,:,1,10])),  cmap='gray')
+plt.imshow(np.log(np.abs(k_imgs[:,:,0,0])),  cmap='gray')
 plt.title('Fully sampled K-space')
 plt.subplot(1,5,3)
-plt.imshow(np.log(np.abs(k_undersampled[:,:,1,10])),  cmap='gray')
+plt.imshow(np.log(np.abs(k_undersampled[:,:,0,0])),  cmap='gray')
 plt.title('Undersampled K-space')
 plt.subplot(1,5,4)
-plt.imshow(np.real(reconstructions_undersampled[:,:,1,10]),  cmap='gray')
+plt.imshow(np.real(reconstructions_undersampled[:,:,0,0]),  cmap='gray')
 plt.title('Reconstruction of undersampled data')
 plt.subplot(1,5,5)
 plt.imshow(test_img[:,:,0], cmap='gray')
