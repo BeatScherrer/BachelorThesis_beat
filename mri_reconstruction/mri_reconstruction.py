@@ -16,6 +16,7 @@ from learn_dictionary import test_dictionary
 from create_mask import create_mask
 
 # import matlab data (johannes')
+print("Importing images...")
 try:
     imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
     imgs = np.float64(imgs['imgs'])
@@ -23,27 +24,39 @@ except:
     print('Error while loading images!')
 
 rows, cols, timesteps, persons = imgs.shape
-    
+
+train_percentage = 0.8
+test_percentage = 1-train_percentage
+
+# Normalizing the images
+#print("Normalizing the images")
+#imgs /= 255
+#imgs -= np.mean(imgs)
+#imgs /= np.std(imgs)
+
 # Transform to k-Space
+print("Transform images to k-space...")
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
 k_imgs = np.fft.fftshift(k_imgs)
 
 # Mask the k_space data
-mask = create_mask(0.5, (rows,cols), 'poisson', sigma=20)
+print("Masking the images...")
+mask = create_mask(0.2, (rows,cols), 'gaussian', sigma=20)
 k_undersampled = k_imgs.copy()
 for i in range(timesteps-1):
     for j in range(persons-1):
         k_undersampled[:,:,i,j] = mask * k_imgs[:,:,i,j]
 
 # Reconstruction via ifft2
+print("Transform images back from k-space...")
 reconstructions_undersampled = np.fft.ifft2(np.fft.ifftshift(k_undersampled), axes=(0,1))
 reconstructions = np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1))
 
 # Train dictionary on fully sampled data
-dico, V = train_dictionary(imgs, n_components=100)
+dico, V = train_dictionary(imgs, n_components=100, train_percentage=train_percentage)
 
 # Test dictionary
-test_img = test_dictionary(reconstructions_undersampled, dico, V)
+recs, rmse = test_dictionary(reconstructions_undersampled, imgs, dico, V, test_percentage)
 
 # Plot various Images
 plt.figure(figsize=(30,30))
@@ -51,17 +64,18 @@ plt.imshow(V,cmap='gray')
 plt.title('Dictionary')
 plt.figure(figsize=(40,40))
 plt.subplot(1,5,1)
-plt.imshow(imgs[:,:,0,0], cmap='gray')
+plt.imshow(imgs[:,:,0,int(persons*train_percentage)], cmap='gray')
 plt.title('Reference Image')
 plt.subplot(1,5,2)
-plt.imshow(np.log(np.abs(k_imgs[:,:,0,0])),  cmap='gray')
+plt.imshow(np.log(np.abs(k_imgs[:,:,0,int(persons*train_percentage)])),  cmap='gray')
 plt.title('Fully sampled K-space')
 plt.subplot(1,5,3)
-plt.imshow(np.log(np.abs(k_undersampled[:,:,0,0])),  cmap='gray')
+plt.imshow(np.log(np.abs(k_undersampled[:,:,0,int(persons*train_percentage)])),  cmap='gray')
 plt.title('Undersampled K-space')
 plt.subplot(1,5,4)
-plt.imshow(np.real(reconstructions_undersampled[:,:,0,0]),  cmap='gray')
+plt.imshow(np.real(reconstructions_undersampled[:,:,0,int(persons*train_percentage)]),  cmap='gray')
 plt.title('Reconstruction of undersampled data')
 plt.subplot(1,5,5)
-plt.imshow(test_img[:,:,0], cmap='gray')
+plt.imshow(recs[:,:,0,0], cmap='gray')
 plt.title('Reconstruction with Dictionary')
+print("The RMSE is:", rmse)
