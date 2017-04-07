@@ -18,31 +18,26 @@ from create_mask import create_mask
 
 # import matlab data (johannes')
 print("Importing images...")
-try:
-    imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
-    imgs = np.float64(imgs['imgs'])
-except:
-    print('Error while loading images!')
-
+imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
+imgs = np.float64(imgs['imgs'])
 rows, cols, timesteps, persons = imgs.shape
 
-# Normalizing the images
+# Normalizing the images along the temporal direction
 print("Normalizing the images")
 imgs = imgs/(2.0**16)
 for i in range(imgs.shape[3]):
     temp = imgs[:,:,:,i].reshape(rows*cols,timesteps)
     temp = temp - np.mean(temp, axis=1, keepdims=True)
-    temp = temp / np.std(temp, axis=1, keepdims=True)
+    temp = temp / np.std(temp, axis=0, keepdims=True)
     temp[np.isnan(temp)] = 0
     imgs[:,:,:,i] = np.reshape(temp,imgs.shape[:-1])
-imgs = np.transpose(imgs, (0,1,2,3))
 
 # Transform to k-Space
 print("Transform images to k-space...")
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
 k_imgs = np.fft.fftshift(k_imgs)
 
-# Mask the k_space data
+# Mask the k_space data 2Do: poisson_disc mask
 print("Masking the images...")
 mask = create_mask(0.2, (rows,cols), 'gaussian', sigma=20)
 k_undersampled = k_imgs.copy()
