@@ -10,6 +10,7 @@ print(__doc__)
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
+import poisson_disc
 
 from learn_dictionary import train_dictionary
 from learn_dictionary import test_dictionary
@@ -25,14 +26,16 @@ except:
 
 rows, cols, timesteps, persons = imgs.shape
 
-train_percentage = 0.8
-test_percentage = 1-train_percentage
-
 # Normalizing the images
-#print("Normalizing the images")
-#imgs /= 255
-#imgs -= np.mean(imgs)
-#imgs /= np.std(imgs)
+print("Normalizing the images")
+imgs = imgs/(2.0**16)
+for i in range(imgs.shape[3]):
+    temp = imgs[:,:,:,i].reshape(rows*cols,timesteps)
+    temp = temp - np.mean(temp, axis=1, keepdims=True)
+    temp = temp / np.std(temp, axis=1, keepdims=True)
+    temp[np.isnan(temp)] = 0
+    imgs[:,:,:,i] = np.reshape(temp,imgs.shape[:-1])
+imgs = np.transpose(imgs, (0,1,2,3))
 
 # Transform to k-Space
 print("Transform images to k-space...")
@@ -43,39 +46,42 @@ k_imgs = np.fft.fftshift(k_imgs)
 print("Masking the images...")
 mask = create_mask(0.2, (rows,cols), 'gaussian', sigma=20)
 k_undersampled = k_imgs.copy()
-for i in range(timesteps-1):
-    for j in range(persons-1):
+for i in range(timesteps):
+    for j in range(persons):
         k_undersampled[:,:,i,j] = mask * k_imgs[:,:,i,j]
 
 # Reconstruction via ifft2
 print("Transform images back from k-space...")
-reconstructions_undersampled = np.fft.ifft2(np.fft.ifftshift(k_undersampled), axes=(0,1))
-reconstructions = np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1))
+reconstructions_undersampled = np.real(np.fft.ifft2(np.fft.ifftshift(k_undersampled), axes=(0,1)))
+reconstructions = np.real(np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1)))
 
 # Train dictionary on fully sampled data
-dico, V = train_dictionary(imgs, n_components=100, train_percentage=train_percentage)
+print("Training...")
+train_imgs = imgs[:,:,:,0:int(0.8*persons)]
+dico, V = train_dictionary(train_imgs, n_components=50)
 
 # Test dictionary
-recs, rmse = test_dictionary(reconstructions_undersampled, imgs, dico, V, test_percentage)
+print("Testing...")
+test_imgs = reconstructions_undersampled[:,:,:,int(0.8*persons):persons]
+recs = test_dictionary(test_imgs, dico, V)
 
 # Plot various Images
-plt.figure(figsize=(30,30))
+plt.figure
 plt.imshow(V,cmap='gray')
 plt.title('Dictionary')
-plt.figure(figsize=(40,40))
+plt.figure
 plt.subplot(1,5,1)
-plt.imshow(imgs[:,:,0,int(persons*train_percentage)], cmap='gray')
+plt.imshow(imgs[:,:,0,300], cmap='gray')
 plt.title('Reference Image')
 plt.subplot(1,5,2)
-plt.imshow(np.log(np.abs(k_imgs[:,:,0,int(persons*train_percentage)])),  cmap='gray')
+plt.imshow(np.log(np.abs(k_imgs[:,:,0,300])),  cmap='gray')
 plt.title('Fully sampled K-space')
 plt.subplot(1,5,3)
-plt.imshow(np.log(np.abs(k_undersampled[:,:,0,int(persons*train_percentage)])),  cmap='gray')
+plt.imshow(np.log(np.abs(k_undersampled[:,:,0,300])),  cmap='gray')
 plt.title('Undersampled K-space')
 plt.subplot(1,5,4)
-plt.imshow(np.real(reconstructions_undersampled[:,:,0,int(persons*train_percentage)]),  cmap='gray')
+plt.imshow(np.real(reconstructions_undersampled[:,:,0,300]),  cmap='gray')
 plt.title('Reconstruction of undersampled data')
 plt.subplot(1,5,5)
 plt.imshow(recs[:,:,0,0], cmap='gray')
 plt.title('Reconstruction with Dictionary')
-print("The RMSE is:", rmse)
