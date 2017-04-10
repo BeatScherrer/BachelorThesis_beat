@@ -23,7 +23,7 @@ imgs = np.float64(imgs['imgs'])
 rows, cols, timesteps, persons = imgs.shape
 
 # Normalizing the images: mean over time, plus normalize each dimension
-print("Normalizing the images")
+print("Normalizing the images...")
 imgs = imgs/255
 for i in range(imgs.shape[3]):
     temp = imgs[:,:,:,i].reshape(rows*cols,timesteps)
@@ -80,9 +80,9 @@ data_test = np.transpose(test_imgs, (2,0,1,3))
 data_test = np.reshape(data_test, (timesteps, -1))
 data_test = data_test.T
 code = dico.transform(data_test)
-rec = np.dot(code, V)
-rec = np.reshape(rec.T, [timesteps, rows, cols, -1])
-rec = np.transpose(rec, (1,2,0,3))
+recs = np.dot(code, V)
+recs = np.reshape(recs.T, [timesteps, rows, cols, -1])
+recs = np.transpose(recs, (1,2,0,3))
 
 # Plot various Images
 plt.figure()
