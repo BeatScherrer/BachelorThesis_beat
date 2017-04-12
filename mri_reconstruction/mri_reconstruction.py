@@ -1,21 +1,11 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Mar 23 15:50:26 2017
-
-@author: beats
-"""
-
-print(__doc__)
-
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import random
 
-from poisson_disc import Grid
 from sklearn.decomposition import MiniBatchDictionaryLearning
-
 from create_mask import create_mask
+from poisson_disc import Grid
 
 # import matlab data (johannes')
 print("Importing images...")
@@ -39,7 +29,7 @@ for i in range(imgs.shape[3]):
   #temp[np.isnan(temp)] = 0
   imgs[:,:,:,i] = np.reshape(temp, s[:-1])
 
-print("imgs shape:", imgs.shape)
+#print("imgs shape:", imgs.shape)
 
 
 # Transform to k-Space
@@ -47,14 +37,27 @@ print("Transform images to k-space...")
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
 k_imgs = np.fft.fftshift(k_imgs)
 
-# Mask the k_space data 2Do: poisson_disc mask
+# Mask the k_space data
 print("Masking the images...")
-mask = create_mask(0.2, (rows,cols), 'gaussian', sigma=20)
-k_undersampled = k_imgs.copy()
-for i in range(timesteps):
-    for j in range(persons):
-        k_undersampled[:,:,i,j] = mask * k_imgs[:,:,i,j]
+r = 5
+length = cols
+width = rows
+grid = Grid(r, length, width)
+rand = (random.uniform(0, length), random.uniform(0, width))
+data = grid.poisson(rand)
 
+mask = np.zeros([rows,cols])
+
+for item in data:
+    mask[int(item[0]),int(item[1])] = 1
+    
+k_undersampled = np.zeros(s)
+for i in range(persons):
+    for j in range(timesteps):
+        k_undersampled[:,:,j,i] = k_imgs[:,:,j,i] * mask
+
+print("samples: {}".format(len(data)))
+print("density : {}".format(round((length*width)/(len(data)*(np.pi*r**2)), 3)))
 
 # Reconstruction via ifft2
 print("Transform images back from k-space...")
