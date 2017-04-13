@@ -4,8 +4,6 @@ import scipy as sp
 import random
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
-from create_mask import create_mask
-from poisson_disc import Grid
 
 # import matlab data (johannes')
 print("Importing images...")
@@ -14,6 +12,7 @@ imgs = np.float64(imgs['imgs'])
 rows, cols, timesteps, persons = imgs.shape
 s = imgs.shape
 
+# Import Poisson disc sampling mask (generated with matlab)
 mask = sp.io.loadmat('poisson_mask.mat')
 mask = np.float64(mask['population_matrix'])
 
@@ -21,15 +20,16 @@ mask = np.float64(mask['population_matrix'])
 print("Normalizing the images...")
 imgs = imgs / (2**16)
 
+sample_mean = np.median(imgs, axis = (0, 1))
 # normalize data
 for i in range(imgs.shape[3]):
   temp = imgs[:,:,:,i].reshape(s[0]*s[1], s[2])
-  # remove mean along time???????????
-  #temp = temp - np.mean(temp, axis=1, keepdims=True)
+  
+  temp = temp - np.mean(temp, axis=1, keepdims=True)
 
-  temp = temp - np.mean(temp,axis=0,keepdims=True)
+  temp = temp - np.median(temp,axis=0,keepdims=True)
   temp = temp / (np.std(temp, axis=0, keepdims=True))
-  #temp[np.isnan(temp)] = 0
+  temp[np.isnan(temp)] = 0
   imgs[:,:,:,i] = np.reshape(temp, s[:-1])
 
 #print("imgs shape:", imgs.shape)
@@ -90,14 +90,14 @@ recs = np.reshape(recs.T, [timesteps, rows, cols, -1])
 recs = np.transpose(recs, (1,2,0,3))
 
 # code
-code = np.reshape(code.T, [timesteps,50,-1])
+code = np.reshape(code.T, [50,rows*cols])
 
 # Plot various Images
 plt.figure(figsize = (8,8))
 plt.imshow(V.T,cmap='gray')
 plt.title('Dictionary')
 
-plt.figure(figsize = (10,10))
+plt.figure(figsize = (15,15))
 plt.subplot(2,6,1)
 plt.imshow(imgs[:,:,0,300], cmap='gray')
 plt.title('Reference Image')
@@ -137,7 +137,6 @@ plt.imshow(code[:,:,1].T,cmap='gray')
 plt.title('Sparse Code')
 
 # plot slice over time
-
 plt.figure(figsize=(8,8))
 plt.subplot(1,2,1)
 plt.imshow(imgs[:,int(cols/2),:,300],cmap='gray')
