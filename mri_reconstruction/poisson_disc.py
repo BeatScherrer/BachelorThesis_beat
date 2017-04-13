@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Apr 11 16:51:19 2017
+Created on Wed Apr 12 15:09:58 2017
 
 @author: beats
 """
 
-import numpy as np
 import random
 from math import sqrt, pi, sin, cos
 from itertools import product
-
 
 
 class Grid:

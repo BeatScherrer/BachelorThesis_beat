@@ -14,6 +14,9 @@ imgs = np.float64(imgs['imgs'])
 rows, cols, timesteps, persons = imgs.shape
 s = imgs.shape
 
+mask = sp.io.loadmat('poisson_mask.mat')
+mask = np.float64(mask['population_matrix'])
+
 # Normalizing the images: mean over time, plus normalize each dimension
 print("Normalizing the images...")
 imgs = imgs / (2**16)
@@ -24,7 +27,7 @@ for i in range(imgs.shape[3]):
   # remove mean along time???????????
   #temp = temp - np.mean(temp, axis=1, keepdims=True)
 
-  temp = temp - np.median(temp,axis=0,keepdims=True)
+  temp = temp - np.mean(temp,axis=0,keepdims=True)
   temp = temp / (np.std(temp, axis=0, keepdims=True))
   #temp[np.isnan(temp)] = 0
   imgs[:,:,:,i] = np.reshape(temp, s[:-1])
@@ -39,25 +42,11 @@ k_imgs = np.fft.fftshift(k_imgs)
 
 # Mask the k_space data
 print("Masking the images...")
-r = 5
-length = cols
-width = rows
-grid = Grid(r, length, width)
-rand = (random.uniform(0, length), random.uniform(0, width))
-data = grid.poisson(rand)
-
-mask = np.zeros([rows,cols])
-
-for item in data:
-    mask[int(item[0]),int(item[1])] = 1
-    
-k_undersampled = np.zeros(s)
+ 
+k_undersampled = k_imgs.copy()
 for i in range(persons):
     for j in range(timesteps):
         k_undersampled[:,:,j,i] = k_imgs[:,:,j,i] * mask
-
-print("samples: {}".format(len(data)))
-print("density : {}".format(round((length*width)/(len(data)*(np.pi*r**2)), 3)))
 
 # Reconstruction via ifft2
 print("Transform images back from k-space...")
@@ -74,13 +63,17 @@ data_train = np.reshape(data_train, (timesteps, -1))
 data_train = data_train.T
 #print("Training Data shape: ", data_train.shape)
 
-# Initialize dictionary as DCT
+# Initialize dictionary
 #init = np.zeros([timesteps,n_components])
 #for i in range(n_components):
 #    for j in range(timesteps):
 #        init[j,i] = np.cos(np.pi/timesteps*(j+0.5)*i)
+print("init dict...")
+init = np.ndarray((50, timesteps))
+for i in range(50):
+    init[i,:] = data_train[int(random.uniform(0,data_train.shape[0])),:]
 
-dico = MiniBatchDictionaryLearning(n_components=50, alpha=0.5, n_iter=500, batch_size=1000, verbose=2) # n_iter = 500, batch_size = 1000
+dico = MiniBatchDictionaryLearning(n_components=50, alpha=0.5, n_iter=500, batch_size=1000, dict_init = init, verbose=2) # n_iter = 500, batch_size = 1000
 V = dico.fit(data_train).components_
 
 # Test dictionary
@@ -96,14 +89,15 @@ recs = np.dot(code, V)
 recs = np.reshape(recs.T, [timesteps, rows, cols, -1])
 recs = np.transpose(recs, (1,2,0,3))
 
+# code 
 code = np.reshape(code.T, [timesteps,rows,cols,-1])
 code = np.transpose(code, (1,2,0,3))
 
 # Plot various Images
-plt.figure()
+plt.figure(figsize = (25,25))
 plt.imshow(V.T,cmap='gray')
 plt.title('Dictionary')
-plt.figure(figsize=(40,40))
+plt.figure
 plt.subplot(2,6,1)
 plt.imshow(imgs[:,:,0,300], cmap='gray')
 plt.title('Reference Image')
@@ -141,6 +135,14 @@ plt.title('Reconstruction with Dictionary')
 plt.subplot(2,6,12)
 plt.imshow(code[:,:,0,1],cmap='gray')
 plt.title('Sparse Code')
+
+# plot slice over time
+
+plt.figure(figsize=(8,8))
+plt.subplot(1,2,1)
+plt.imshow(imgs[:,int(cols/2),:,300],cmap='gray')
+plt.subplot(1,2,2)
+plt.imshow(recs[:,int(cols/2),:,0],cmap='gray')
 
 print("Dictionary representations are sparse: ", sp.sparse.issparse(code))
 
