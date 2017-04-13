@@ -89,15 +89,15 @@ recs = np.dot(code, V)
 recs = np.reshape(recs.T, [timesteps, rows, cols, -1])
 recs = np.transpose(recs, (1,2,0,3))
 
-# code 
-code = np.reshape(code.T, [timesteps,rows,cols,-1])
-code = np.transpose(code, (1,2,0,3))
+# code
+code = np.reshape(code.T, [timesteps,50,-1])
 
 # Plot various Images
-plt.figure(figsize = (25,25))
+plt.figure(figsize = (8,8))
 plt.imshow(V.T,cmap='gray')
 plt.title('Dictionary')
-plt.figure
+
+plt.figure(figsize = (10,10))
 plt.subplot(2,6,1)
 plt.imshow(imgs[:,:,0,300], cmap='gray')
 plt.title('Reference Image')
@@ -114,7 +114,7 @@ plt.subplot(2,6,5)
 plt.imshow(recs[:,:,0,0], cmap='gray')
 plt.title('Reconstruction with Dictionary')
 plt.subplot(2,6,6)
-plt.imshow(code[:,:,0,0],cmap='gray')
+plt.imshow(code[:,:,0].T,cmap='gray')
 plt.title('Sparse Code')
 
 plt.subplot(2,6,7)
@@ -133,7 +133,7 @@ plt.subplot(2,6,11)
 plt.imshow(recs[:,:,0,1], cmap='gray')
 plt.title('Reconstruction with Dictionary')
 plt.subplot(2,6,12)
-plt.imshow(code[:,:,0,1],cmap='gray')
+plt.imshow(code[:,:,1].T,cmap='gray')
 plt.title('Sparse Code')
 
 # plot slice over time
