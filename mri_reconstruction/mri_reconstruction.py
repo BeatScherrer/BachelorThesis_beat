@@ -20,21 +20,10 @@ mask = np.float64(mask['population_matrix'])
 print("Normalizing the images...")
 imgs = imgs / (2**16)
 
-sample_mean = np.median(imgs, axis = (0, 1))
-# normalize data
-for i in range(imgs.shape[3]):
-  temp = imgs[:,:,:,i].reshape(s[0]*s[1], s[2])
-  
-  temp = temp - np.mean(temp, axis=1, keepdims=True)
-
-  temp = temp - np.median(temp,axis=0,keepdims=True)
-  temp = temp / (np.std(temp, axis=0, keepdims=True))
-  temp[np.isnan(temp)] = 0
-  imgs[:,:,:,i] = np.reshape(temp, s[:-1])
-
-#print("imgs shape:", imgs.shape)
-
-
+sample_mean = np.median(imgs, axis = (0, 1), keepdims = True)
+sample_std = np.std(imgs, axis = (0, 1), keepdims = True)
+sample_std[sample_std < 1e-5] = 1e-5
+          
 # Transform to k-Space
 print("Transform images to k-space...")
 k_imgs = np.fft.fft2(imgs, axes=(0,1))
@@ -42,7 +31,6 @@ k_imgs = np.fft.fftshift(k_imgs)
 
 # Mask the k_space data
 print("Masking the images...")
- 
 k_undersampled = k_imgs.copy()
 for i in range(persons):
     for j in range(timesteps):
@@ -51,11 +39,39 @@ for i in range(persons):
 # Reconstruction via ifft2
 print("Transform images back from k-space...")
 reconstructions_undersampled = np.real(np.fft.ifft2(np.fft.ifftshift(k_undersampled), axes=(0,1)))
-reconstructions = np.real(np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1)))
+#reconstructions = np.real(np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1)))
+reconstructions = imgs
+
+imgs = imgs - sample_mean
+imgs = imgs / sample_std
+reconstructions_undersampled = reconstructions_undersampled - sample_mean
+reconstructions_undersampled = reconstructions_undersampled / sample_std
+
+train_mean = np.mean(imgs, axis = 2, keepdims = True)
+imgs = imgs - train_mean 
+
+rec_temp_mean = np.mean(reconstructions_undersampled, axis = 2, keepdims = True)
+reconstructions_undersampled = reconstructions_undersampled - rec_temp_mean
+
+          
+# normalize data
+if False:
+    for i in range(imgs.shape[3]):
+      temp = imgs[:,:,:,i].reshape(s[0]*s[1], s[2])
+      
+      temp = temp - np.mean(temp, axis=1, keepdims=True)
+    
+      temp = temp - np.median(temp,axis=0,keepdims=True)
+      temp = temp / (np.std(temp, axis=0, keepdims=True))
+      temp[np.isnan(temp)] = 0
+      imgs[:,:,:,i] = np.reshape(temp, s[:-1])
+
+#print("imgs shape:", imgs.shape)
+
 
 # Train dictionary on fully sampled data
 print("Training...")
-train_imgs = imgs[:,:,:,0:int(0.8*persons)]
+train_imgs = imgs[:,:,:,0:int(0.9*persons)]
 
 data_train = np.transpose(train_imgs, (2,0,1,3))
 #print("data_train", data_train.shape)
@@ -73,12 +89,12 @@ init = np.ndarray((50, timesteps))
 for i in range(50):
     init[i,:] = data_train[int(random.uniform(0,data_train.shape[0])),:]
 
-dico = MiniBatchDictionaryLearning(n_components=50, alpha=0.5, n_iter=500, batch_size=1000, dict_init = init, verbose=2) # n_iter = 500, batch_size = 1000
+dico = MiniBatchDictionaryLearning(n_components=50, alpha=0.005, n_iter=250, batch_size=1000, dict_init = init, verbose=2) # n_iter = 500, batch_size = 1000
 V = dico.fit(data_train).components_
 
 # Test dictionary
 print("Testing...")
-test_imgs = reconstructions_undersampled[:,:,:,int(0.8*persons):persons]
+test_imgs = reconstructions_undersampled[:,:,:,int(0.9*persons):persons]
 
 data_test = np.transpose(test_imgs, (2,0,1,3))
 #data_test = np.transpose(np.abs(imgs_under[:,:,:,10], (2, 0, 1))
