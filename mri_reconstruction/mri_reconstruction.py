@@ -12,9 +12,7 @@ imgs = np.float64(imgs['imgs'])
 rows, cols, timesteps, persons = imgs.shape
 s = imgs.shape
 
-# Import Poisson disc sampling mask (generated with matlab)
-mask = sp.io.loadmat('poisson_mask.mat')
-mask = np.float64(mask['population_matrix'])
+
 
 # Normalizing the images: mean over time, plus normalize each dimension
 print("Normalizing the images...")
