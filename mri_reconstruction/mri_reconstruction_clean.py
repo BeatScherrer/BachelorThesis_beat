@@ -9,11 +9,14 @@ import numpy as np
 import scipy as sp
 import random
 import time
+import os.path as path
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
 
 import poisson_disc_light
 import enhanced_grid
+
+import matplotlib.pyplot as plt
 
 class mri_reconstruction:
     '''
@@ -66,12 +69,10 @@ class mri_reconstruction:
 
         for index in r_grid.index_iter():
             r_grid[index] = a-(a*np.e**(-(poisson_disc_light.dist(index, center)-b)**2/(2*c**2))) + 0.1 # avoid 0 radius!
-            
         return r_grid
     
-    def create_mask(self, a, b, c):
+    def create_mask(self, a, b, c, *shape):
         
-        # 2Do: save masks in a mat file
         r_grid = self.create_r_grid(a,b,c)
         
         p = poisson_disc_light.sample_poisson(self.cols, self.rows, r_grid, 30)
@@ -79,18 +80,26 @@ class mri_reconstruction:
         mask = np.zeros((self.cols,self.rows))
         for item in p:
             mask[item]=1
-        return mask
+        sp.io.savemat('masks.mat', {'masks':mask})
+        
+        pass
     
-    def mask_imgs(self, a, b, c, imgs, verbose = False):
+    def mask_imgs(self, a, b, c, imgs, masks):
         # only mask the testing data since masking all images would take long
-        imgs = abs(imgs)
         print('masking imgs...')
+        try:
+            print('importing masks...')
+            imgs = sp.io.loadmat('masks.mat')
+            imgs = np.float64(imgs['masks'])
+            
+        except:
+            print('Error while importing masks')
+            return False
+        
         t0 = time.time()
         for i in range(imgs.shape[3]):
-            if verbose:
-                print(i)
             for j in range(imgs.shape[2]):
-                imgs[:,:,j,i] *= self.create_mask(a, b, c)
+                imgs[:,:,j,i] *= masks[:,:,j,i]
         print("done in %.1fs." %(time.time()-t0))
         return imgs
     
@@ -169,15 +178,24 @@ class mri_reconstruction:
     def error_difference(self, imgs, imgs_rec, imgs_rec_dic):
         return self.total_error(imgs,imgs_rec) - self.total_error(imgs,imgs_rec_dic)
     
-    def print_chain(self):
-        return
-    
     def sparsity(self, A):
         A = np.ravel(A)
         return round(1-float(np.count_nonzero(A))/len(A), 2)
     
     def minimize_alpha(self):
         return
+    
+    def create_plots(self):
+        plt.figure(figsize=(20,20))
+        plt.subplot(1,4,1)
+        plt.imshow(ref_imgs_test[:,:,0,0], cmap='gray')
+        plt.subplot(1,4,2)
+        plt.imshow(np.log(k_mskd[:,:,0,0]), cmap = 'gray')
+        plt.subplot(1,4,3)
+        plt.imshow(imgs_test[:,:,0,0], cmap= 'gray')
+        plt.subplot(1,4,4)
+        plt.imshow(recs[:,:,0,0], cmap = 'gray')
+        pass
       
 obj = mri_reconstruction()
     
@@ -196,7 +214,7 @@ obj.train_dictionary(imgs_train, n_components=50, alpha=0.005, n_iter=250, batch
 # Testing
 ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons]
 k_test = obj.transform(ref_imgs_test)
-k_mskd = obj.mask_imgs(a, b, c, k_test, verbose=True)
+k_mskd = obj.mask_imgs(a, b, c, k_test, masks, verbose=True)
 imgs_test = obj.inverse_transform(k_mskd)
 recs = obj.test_dictionary(imgs_test)
 
@@ -204,3 +222,12 @@ recs = obj.test_dictionary(imgs_test)
 err_diff = obj.error_difference(ref_imgs_test, imgs_test, recs)
 print(err_diff)
 #printing
+plt.figure(figsize=(20,20))
+plt.subplot(1,4,1)
+plt.imshow(ref_imgs_test[:,:,0,0])
+plt.subplot(1,4,2)
+plt.imshow(np.log(k_mskd[:,:,0,0]))
+plt.subplot(1,4,3)
+plt.imshow(imgs_test[:,:,0,0])
+plt.subplot(1,4,4)
+plt.imshow(recs[:,:,0,0])
