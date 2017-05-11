@@ -209,18 +209,6 @@ class mri_reconstruction:
         return err_tot
     
     def error_difference(self, imgs, imgs_test, imgs_rec):
-        '''
-        Calculates the error of (imgs - imgs_rec) - (imgs - imgs_test).
-        All parameters must have the same size.
-        
-        Parameters
-        ----------
-        imgs : Reference Image, fully sampled
-        
-        imgs_test : Inverse transformed undersampled image (with artifacts)
-        
-        imgs_rec : With dictionary and sparse coding reconstructed image
-        '''
         return self.total_error(imgs,imgs_rec) - self.total_error(imgs,imgs_test)
     
     def sparsity(self, A):

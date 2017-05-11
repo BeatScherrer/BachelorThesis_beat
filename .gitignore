@@ -1,6 +1,7 @@
 # matlab temporary files:
 
 *.asv
-ismrm_ssa_imgs.mat
-/mri_reconstruction/__pycache__
 *.mat
+*.png
+
+/mri_reconstruction/__pycache__
