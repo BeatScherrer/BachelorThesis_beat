@@ -12,43 +12,41 @@ from time import time
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy as sp
+from pathlib import Path
 from PIL import Image
+
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
-from sklearn.utils.testing import SkipTest
-from sklearn.utils.fixes import sp_version
 
-if sp_version < (0, 12):
-    raise SkipTest("Skipping because SciPy version earlier than 0.12.0 and "
-                   "thus does not include the scipy.misc.face() image.")
+
 try:
-    from scipy import misc
-    face = misc.face(gray=True)
-except AttributeError:
-    # Old versions of scipy have face in the top level package
-    face = sp.face(gray=True)
+    p = Path('../Sklearn/images/cartoon/cartoon_5.jpg')
+    img = Image.open(p)
+    img = img.convert('L')
+    img = np.asarray(img)
+    
+except:
+    print('Error while reading Image!')
 
 # Convert from uint8 representation with values between 0 and 255 to
 # a floating point representation with values between 0 and 1.
-face = face / 255
-
+img = img / 255
 # downsample for higher speed. third argument in array parameter = step size
-face = face[::2, ::2] + face[1::2, ::2] + face[::2, 1::2] + face[1::2, 1::2]
-face = face / 4.0
-height, width = face.shape
+img = img[::2, ::2] + img[1::2, ::2] + img[::2, 1::2] + img[1::2, 1::2]
+img /= 4.0
+height, width = img.shape
 
 # Distort the right half of the image
 print('Distorting image...')
-distorted = face.copy()
+distorted = img.copy()
 distorted[:, width // 2:] += 0.075 * np.random.randn(height, width // 2)
 
 # Extract all reference patches from the left half of the image
 print('Extracting reference patches...')
 t0 = time()
-patch_size = (7, 7)
+patch_size = (5, 5)
 data = extract_patches_2d(distorted[:, :width // 2], patch_size)
 data = data.reshape(data.shape[0], -1)
 data -= np.mean(data, axis=0)
@@ -94,7 +92,7 @@ def show_with_diff(image, reference, title):
     plt.suptitle(title, size=16)
     plt.subplots_adjust(0.02, 0.02, 0.98, 0.79, 0.02, 0.2)
 
-show_with_diff(distorted, face, 'Distorted image')
+show_with_diff(distorted, img, 'Distorted image')
 
 print('Extracting noisy patches... ')
 t0 = time()
@@ -116,7 +114,7 @@ transform_algorithms = [
 reconstructions = {}
 for title, transform_algorithm, kwargs in transform_algorithms:
     print(title + '...')
-    reconstructions[title] = face.copy()
+    reconstructions[title] = img.copy()
     t0 = time()
     dico.set_params(transform_algorithm=transform_algorithm, **kwargs)
     code = dico.transform(data)
@@ -131,7 +129,7 @@ for title, transform_algorithm, kwargs in transform_algorithms:
         patches, (height, width // 2))
     dt = time() - t0
     print('done in %.2fs.' % dt)
-    show_with_diff(reconstructions[title], face,
+    show_with_diff(reconstructions[title], img,
                    title + ' (time: %.1fs)' % dt)
 
 plt.show()
