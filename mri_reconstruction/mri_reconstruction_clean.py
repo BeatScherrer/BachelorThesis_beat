@@ -3,6 +3,11 @@
 Created on Sat Apr 15 10:55:50 2017
 
 @author: beats
+
+Version
+------
+Python 2.7
+scikit-learn 0.19.dev0
 """
 import numpy as np
 import scipy as sp
@@ -112,15 +117,24 @@ class mri_reconstruction:
         return masks
         
     
-    def mask_imgs(self, imgs, fname):
+    def mask_imgs(self, imgs, fname, method='uniform', p_zeros=0.5):
         print"masking imgs..."
-        try:
-            print"importing masks..."
-            masks = self.import_masks(fname)
+        
+        if method == 'poisson':
+            try:
+                print"importing masks..."
+                masks = self.import_masks(fname)
             
-        except:
-            print"Error while importing masks"
-            pass
+            except:
+                print"Error while importing masks"
+                pass
+        
+        if method == 'uniform':
+            masks = np.zeros((imgs.shape))
+            for t in range(imgs.shape[2]):
+                for p in range(imgs.shape[3]):
+                    masks[:,:,t,p] = np.random.choice((0,1), size=(imgs.shape[0],imgs.shape[1]), p=(1-p_zeros, p_zeros))
+        
         
         t0 = time.time()
         for i in range(imgs.shape[3]):
@@ -132,69 +146,16 @@ class mri_reconstruction:
     def imgs_to_data(self, imgs):
         print"converting imgs to data..."
         data = np.transpose(imgs, (2,0,1,3))
-        data = np.reshape(data, (self.timesteps, -1))
+        data = np.reshape(data, (self.timesteps, -1), order='F')
         data = data.T
         return data
     
     def data_to_imgs(self, data):
         print"converting data to imgs..."
         data = data.T
-        imgs = np.reshape(data, (self.timesteps, self.cols, self.rows, -1))
+        imgs = np.reshape(data, (self.timesteps, self.cols, self.rows, -1), order='F')
         imgs = np.transpose(imgs,(1,2,0,3))
         return imgs
-    
-    def initialize_dictionary(self, n_components, data_train):
-        print"initializing dictionary..."
-        init = np.zeros((n_components, data_train.shape[1]))
-        
-        for k in range(int(n_components/2)):
-            for n in range(data_train.shape[1]):
-                init[k,n] = np.cos((np.pi/data_train.shape[1])*n*(k+0.5))
-                
-        for i in range(int(n_components/2),n_components):
-            init[i,:] = data_train[int(random.uniform(0,data_train.shape[0])),:]
-            
-        self.init = init
-        
-        return init
-    
-    def get_training_data(self):
-        return
-    
-    def get_testing_data(self):
-        return
-    
-    def train_dictionary(self, imgs_train, n_components=50, alpha=1, transform_alpha=1, 
-                         n_iter=250, batch_size=1000, verbose=0):
-        # normalize images
-        imgs_norm = self.normalize(imgs_train)
-        # transform to (samples, features) shape
-        data_train = self.imgs_to_data(imgs_norm)
-        
-        init = self.initialize_dictionary(n_components, data_train)
-        
-        print"training dictionary..."
-        t0 = time.time()
-        self.dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha, 
-                                                n_iter = n_iter, batch_size=batch_size, 
-                                                dict_init=init, verbose=verbose, 
-                                                transform_alpha = transform_alpha,
-                                                fit_algorithm='lars', transform_algorithm='omp')
-        self.dico.fit(data_train)
-        self.V = self.dico.components_
-        print"dictionary trained in %.1fs." %(time.time()-t0)
-        pass
-    
-    def test_dictionary(self, imgs_test):
-        imgs_norm = self.normalize(imgs_test)
-        data_test = self.imgs_to_data(imgs_norm)
-        print"testing dictionary..."
-        t0 = time.time()
-        self.code_test = self.dico.transform(data_test)
-        recs = np.dot(self.code_test,self.V)
-        recs = self.data_to_imgs(recs)
-        print"dictionary tested in %.1fs." %(time.time()-t0)
-        return recs
     
     def imgs_error(self, img1, img2):
         err = np.sqrt(np.sum((img1 - img2) ** 2))
@@ -213,7 +174,102 @@ class mri_reconstruction:
     
     def sparsity(self, A):
         A = np.ravel(A)
-        return round(1-float(np.count_nonzero(A))/len(A), 4)
+        return 1-float(np.count_nonzero(A))/len(A)
+    
+    def get_training_data(self):
+        return
+    
+    def get_testing_data(self):
+        return
+    
+    def initialize_dictionary(self, n_components, data_train):
+        print"initializing dictionary..."
+        init = np.zeros((n_components, data_train.shape[1]))
+        
+        for k in range(int(n_components/2)):
+            for n in range(data_train.shape[1]):
+                init[k,n] = np.cos((np.pi/data_train.shape[1])*n*(k+0.5))
+                
+        for i in range(int(n_components/2),n_components):
+            init[i,:] = data_train[int(random.uniform(0,data_train.shape[0])),:].copy()
+            
+        self.init = init
+        
+        return init
+
+    def train_dictionary(self, imgs_train, n_components=50, alpha=1, transform_alpha=1, 
+                         n_iter=250, batch_size=1000, verbose=0, fit_algorithm='lars'):
+        '''
+        Parameters
+        ----------
+        method : {'lars', 'cd'}
+        lars: uses the least angle regression method to solve the lasso problem
+        (linear_model.lars_path)
+        cd: uses the coordinate descent method to compute the
+        Lasso solution (linear_model.Lasso). Lars will be faster if
+        the estimated components are sparse.
+        
+        alpha : float,
+        Sparsity controlling parameter.
+        '''
+        # normalize images
+        imgs_norm = self.normalize(imgs_train)
+        # transform to (samples, features) shape
+        data_train = self.imgs_to_data(imgs_norm)
+        init = self.initialize_dictionary(n_components, data_train)
+        
+        print"training dictionary..."
+        t0 = time.time()
+        
+        self.dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha, 
+                                                n_iter = n_iter, batch_size=batch_size, 
+                                                dict_init=init.copy(), verbose=verbose, 
+                                                fit_algorithm='lars')
+        self.dico.fit(data_train)
+        self.V = self.dico.components_
+        
+        print"dictionary trained in %.1fs." %(time.time()-t0)
+        
+        pass
+    
+    def test_dictionary(self, imgs_test, alpha=1, transform_algorithm='omp', verbose=0):
+        '''
+        Parameters
+        ---------
+        alpha : float, 1. by default
+        If `algorithm='lasso_lars'` or `algorithm='lasso_cd'`, `alpha` is the
+        penalty applied to the L1 norm.
+        If `algorithm='threshold'`, `alpha` is the absolute value of the
+        threshold below which coefficients will be squashed to zero.
+        If `algorithm='omp'`, `alpha` is the tolerance parameter: the value of
+        the reconstruction error targeted. In this case, it overrides
+        `n_nonzero_coefs`.
+        
+        algorithm : {'lasso_lars', 'lasso_cd', 'lars', 'omp', 'threshold'}
+        lars: uses the least angle regression method (linear_model.lars_path)
+        lasso_lars: uses Lars to compute the Lasso solution
+        lasso_cd: uses the coordinate descent method to compute the
+        Lasso solution (linear_model.Lasso). lasso_lars will be faster if
+        the estimated components are sparse.
+        omp: uses orthogonal matching pursuit to estimate the sparse solution
+        threshold: squashes to zero all coefficients less than alpha from
+        the projection dictionary * X'
+        '''
+        imgs_norm = self.normalize(imgs_test)
+        data_test = self.imgs_to_data(imgs_norm)
+        
+        print"testing dictionary..."
+        t0 = time.time()
+        
+        self.dico.transform_alpha = alpha
+        self.dico.transform_algorithm = transform_algorithm
+        self.code_test = self.dico.transform(data_test)
+        
+        recs = np.dot(self.code_test,self.V)
+        recs = self.data_to_imgs(recs)
+        
+        print"dictionary tested in %.1fs." %(time.time()-t0)
+        return recs
     
     def minimize_alpha_train(self, imgs_train, imgs_test, imgs_test_ref, 
                              alpha_train=np.linspace(0,1,num=10), n_components=50, 
@@ -270,12 +326,11 @@ class mri_reconstruction:
         
         print"alpha_test minimized in %.1fs" %(time.time()-t0)
         
-        return alpha_test, min_err
-    
-    def create_plots(self):
-        pass
-      
+        return alpha_test, min_err        
 
+#==============================================================================
+# main function:
+#==============================================================================
 if __name__ == '__main__':
     obj = mri_reconstruction()
         
@@ -283,12 +338,10 @@ if __name__ == '__main__':
     percentage = 0.8
     
     # Variables
-    #imgs_train = obj.imgs[:,:,:,:int(percentage*obj.persons)]
-    imgs_train = obj.imgs[:,:,:,:2]
-    #ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons]
-    ref_imgs_test = obj.imgs[:,:,:,:2]
+    imgs_train = obj.imgs[:,:,:,:int(percentage*obj.persons)].copy()
+    ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons].copy()
     k_test = obj.transform(ref_imgs_test)
-    k_mskd = obj.mask_imgs(k_test, 'masks_200_0_200.mat')
+    k_mskd = obj.mask_imgs(k_test, 'masks_200_0_200.mat', method='uniform', p_zeros=0.8)
     imgs_test = obj.inverse_transform(k_mskd)
     
     # Minimize alpha
@@ -297,72 +350,76 @@ if __name__ == '__main__':
     #                                                               n_iter=250, batch_size=1000, verbose=1, return_vectors=True)
 
     # Training
-    obj.train_dictionary(imgs_train, n_components=50, alpha=0.2, transform_alpha=1, n_iter=250, batch_size=1000, verbose=1)
+    obj.train_dictionary(imgs_train, n_components=50, alpha=0.2, n_iter=250, 
+                         batch_size=1000, verbose=1, fit_algorithm='lars')
     
     # Testing
-    recs = obj.test_dictionary(imgs_test)
+    recs = obj.test_dictionary(imgs_test[:,:,:, :2], alpha=0.5, transform_algorithm='lasso_lars')
     
     # calculate error
     #err_diff = obj.error_difference(obj.normalize(ref_imgs_test), obj.normalize(imgs_test), recs)
+    obj.sparsity(obj.code_test)
     
-#    def print_imgs():
-#        print"------------------------------------------------"
-#        print" "
-#        
-#        #printing
-#        plt.figure()
-#        plt.subplot(1,3,1)
-#        plt.imshow(obj.init, cmap='gray')
-#        plt.title("Dictionary Initialization")
-#        plt.subplot(1,3,2)
-#        plt.imshow(obj.V, cmap='gray')
-#        plt.title("Dictionary")
-#        plt.subplot(1,3,3)
-#        plt.imshow(abs(obj.code_test[0:50,:]), cmap='gray')
-#        plt.title("code for first 50 Pixels")
-#        
-#        plt.figure(figsize=(15,15))
-#        plt.subplot(2,4,1)
-#        person1 = 0
-#        time1 = 0
-#        plt.imshow(ref_imgs_test[:,:,time1,person1], cmap='gray')
-#        plt.title("Reference")
-#        plt.subplot(2,4,2)
-#        plt.imshow(np.log(abs(k_mskd[:,:,time1,person1])), cmap='gray')
-#        plt.title("Masked k-space")
-#        plt.subplot(2,4,3)
-#        plt.imshow(imgs_test[:,:,time1,person1], cmap='gray')
-#        plt.title("Test image")
-#        plt.subplot(2,4,4)
-#        plt.imshow(recs[:,:,time1,person1], cmap='gray')
-#        plt.title("Reconstructed image with dictionary")
-#        
-#        plt.subplot(2,4,5)
-#        person2 = 10
-#        time2 = 0
-#        plt.imshow(ref_imgs_test[:,:,time2,person2], cmap='gray')
-#        plt.title("Reference")
-#        plt.subplot(2,4,6)
-#        plt.imshow(np.log(abs(k_mskd[:,:,time2,person2])), cmap='gray')
-#        plt.title("Masked k-space")
-#        plt.subplot(2,4,7)
-#        plt.imshow(imgs_test[:,:,time2,person2], cmap='gray')
-#        plt.title("Test image")
-#        plt.subplot(2,4,8)
-#        plt.imshow(recs[:,:,time2,person2], cmap='gray')
-#        plt.title("Reconstructed image with dictionary")
-#        
-#        plt.figure(figsize=(8,8))
-#        plt.subplot(1,3,1)
-#        plt.imshow(ref_imgs_test[:,int(obj.cols/2),:,person1],cmap='gray')
-#        plt.title("Reference")
-#        plt.subplot(1,3,2)
-#        plt.imshow(imgs_test[:,int(obj.cols/2),:,person1], cmap='gray')
-#        plt.title("Inverse transform")
-#        plt.subplot(1,3,3)
-#        plt.imshow(recs[:,int(obj.cols/2),:,person1],cmap='gray')
-#        plt.title("Dictionary Reconstruction")
-#    
-#        pass
-#
-#print_imgs()
+    
+    def print_imgs():
+        print"------------------------------------------------"
+        print" "
+        
+        #printing
+        plt.figure()
+        plt.subplot(1,3,1)
+        plt.imshow(obj.init, cmap='gray')
+        plt.title("Dictionary Initialization")
+        plt.subplot(1,3,2)
+        plt.imshow(obj.V, cmap='gray')
+        plt.title("Dictionary")
+        plt.subplot(1,3,3)
+        plt.imshow(abs(obj.code_test[0:50,:]), cmap='gray')
+        plt.title("code for first 50 Pixels")
+        
+        plt.figure(figsize=(15,15))
+        plt.subplot(2,4,1)
+        person1 = 0
+        time1 = 0
+        plt.imshow(ref_imgs_test[:,:,time1,person1], cmap='gray')
+        plt.title("Reference")
+        plt.subplot(2,4,2)
+        plt.imshow(np.log(abs(k_mskd[:,:,time1,person1])), cmap='gray')
+        plt.title("Masked k-space")
+        plt.subplot(2,4,3)
+        plt.imshow(imgs_test[:,:,time1,person1], cmap='gray')
+        plt.title("Test image")
+        plt.subplot(2,4,4)
+        plt.imshow(recs[:,:,time1,person1], cmap='gray')
+        plt.title("Reconstructed image with dictionary")
+        
+        plt.subplot(2,4,5)
+        person2 = 10
+        time2 = 0
+        plt.imshow(ref_imgs_test[:,:,time2,person2], cmap='gray')
+        plt.title("Reference")
+        plt.subplot(2,4,6)
+        plt.imshow(np.log(abs(k_mskd[:,:,time2,person2])), cmap='gray')
+        plt.title("Masked k-space")
+        plt.subplot(2,4,7)
+        plt.imshow(imgs_test[:,:,time2,person2], cmap='gray')
+        plt.title("Test image")
+        plt.subplot(2,4,8)
+        plt.imshow(recs[:,:,time2,person2], cmap='gray')
+        plt.title("Reconstructed image with dictionary")
+        
+        plt.figure(figsize=(8,8))
+        plt.subplot(1,3,1)
+        plt.imshow(ref_imgs_test[:,int(obj.cols/2),:,person1],cmap='gray')
+        plt.title("Reference")
+        plt.subplot(1,3,2)
+        plt.imshow(imgs_test[:,int(obj.cols/2),:,person1], cmap='gray')
+        plt.title("Inverse transform")
+        plt.subplot(1,3,3)
+        plt.imshow(recs[:,int(obj.cols/2),:,person1],cmap='gray')
+        plt.title("Dictionary Reconstruction")
+    
+        pass
+
+print_imgs()
+
