@@ -3,3 +3,4 @@
 *.asv
 ismrm_ssa_imgs.mat
 /mri_reconstruction/__pycache__
+*.mat

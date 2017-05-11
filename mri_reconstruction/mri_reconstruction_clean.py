@@ -4,12 +4,10 @@ Created on Sat Apr 15 10:55:50 2017
 
 @author: beats
 """
-
 import numpy as np
 import scipy as sp
 import random
 import time
-import os.path as path
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
 
@@ -22,41 +20,44 @@ class mri_reconstruction:
     '''
     Class to reconstruct MRI Images with dictionary learning on large data sets of MRI images (128,128,25,375)
     '''
-    
     def __init__(self):
-        self.imgs = self.import_imgs()
+        self.imgs = self.import_imgs('ismrm_ssa_imgs.mat', 'imgs')
         self.imgs_shape = self.imgs.shape
         self.rows = self.imgs.shape[0]
         self.cols = self.imgs.shape[1]
         self.timesteps = self.imgs.shape[2]
         self.persons = self.imgs.shape[3]
         
-    def import_imgs(self):
-        print('importing images...')
-        imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
-        imgs = np.float64(imgs['imgs'])
+    def import_imgs(self, fname, name):
+        print"importing images..."
+        imgs = sp.io.loadmat(fname)
+        imgs = np.float64(imgs[name])
         return imgs
         
     def normalize(self, imgs):
-        print('normalizing...')
-        imgs_spat_median = np.median(imgs, axis=(0,1), keepdims=True)
+        print"normalizing..."
+        imgs = imgs / 255
+        #imgs_spat_median = np.median(imgs, axis=(0,1), keepdims=True)
         imgs_spat_std = np.std(imgs, axis=(0,1), keepdims=True)
         imgs_spat_std[imgs_spat_std < 1e-5] = 1e-5
-        imgs_tmp_mean = np.mean(imgs, axis = 2, keepdims=True)
+        imgs_tmp_median = np.median(imgs, axis = 2, keepdims=True)
         
-        imgs -= imgs_spat_median
+        #imgs -= imgs_spat_median
         imgs /= imgs_spat_std
-        imgs -= imgs_tmp_mean
+        imgs -= imgs_tmp_median
+        
+        imgs[np.isnan(imgs)]=0
+        
         return imgs
     
     def transform(self, imgs):
-        print('transform to k-space...')
+        print"transform to k-space..."
         k_imgs = np.fft.fft2(imgs, axes=(0,1))
         k_imgs = np.fft.fftshift(k_imgs)
         return k_imgs
     
-    def inverse_transform(self,k_imgs):
-        print('transforming back from k-space...')
+    def inverse_transform(self, k_imgs):
+        print"transforming back from k-space..."
         imgs = np.real(np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1)))
         return imgs
     
@@ -71,65 +72,90 @@ class mri_reconstruction:
             r_grid[index] = a-(a*np.e**(-(poisson_disc_light.dist(index, center)-b)**2/(2*c**2))) + 0.1 # avoid 0 radius!
         return r_grid
     
-    def create_mask(self, a, b, c, *shape):
-        
+    def create_mask(self, a, b, c, shape):
+        print"create_mask"
         r_grid = self.create_r_grid(a,b,c)
         
-        p = poisson_disc_light.sample_poisson(self.cols, self.rows, r_grid, 30)
-    
-        mask = np.zeros((self.cols,self.rows))
+        p = poisson_disc_light.sample_poisson(shape[0], shape[1], r_grid, 30)
+        mask = np.zeros(shape[0:2])
         for item in p:
-            mask[item]=1
-        sp.io.savemat('masks.mat', {'masks':mask})
+            mask[item] = 1
+        return mask
+    
+    def export_masks(self, a, b, c, shape):        
+        print"creating masks..."
+        masks = np.zeros(shape)
+        
+        r_grid = self.create_r_grid(a,b,c)
+
+        for i in range(shape[2]):
+            print(float(i)/shape[2])
+            
+            for j in range(shape[3]):
+                p = poisson_disc_light.sample_poisson(shape[0], shape[1], r_grid, 30)
+                
+                mask = np.zeros(shape[0:2])
+                
+                for item in p:
+                    mask[item]=1
+                        
+                masks[:,:,i,j] = mask
+        
+        sp.io.savemat('masks' + '_' + str(a) + '_' + str(b) + '_' + str(c) + '.mat', {'masks':masks})
         
         pass
     
-    def mask_imgs(self, a, b, c, imgs, masks):
-        # only mask the testing data since masking all images would take long
-        print('masking imgs...')
+    def import_masks(self, fname):
+        masks = sp.io.loadmat(fname)
+        masks = masks['masks']
+        
+        return masks
+        
+    
+    def mask_imgs(self, imgs, fname):
+        print"masking imgs..."
         try:
-            print('importing masks...')
-            imgs = sp.io.loadmat('masks.mat')
-            imgs = np.float64(imgs['masks'])
+            print"importing masks..."
+            masks = self.import_masks(fname)
             
         except:
-            print('Error while importing masks')
-            return False
+            print"Error while importing masks"
+            pass
         
         t0 = time.time()
         for i in range(imgs.shape[3]):
             for j in range(imgs.shape[2]):
                 imgs[:,:,j,i] *= masks[:,:,j,i]
-        print("done in %.1fs." %(time.time()-t0))
+        print"done in %.1fs." %(time.time()-t0)
         return imgs
     
     def imgs_to_data(self, imgs):
-        print('converting imgs to data...')
+        print"converting imgs to data..."
         data = np.transpose(imgs, (2,0,1,3))
         data = np.reshape(data, (self.timesteps, -1))
         data = data.T
         return data
     
     def data_to_imgs(self, data):
-        print('converting data to imgs...')
+        print"converting data to imgs..."
         data = data.T
         imgs = np.reshape(data, (self.timesteps, self.cols, self.rows, -1))
         imgs = np.transpose(imgs,(1,2,0,3))
         return imgs
     
     def initialize_dictionary(self, n_components, data_train):
-        '''
-        2Do
-        ----
-        initialize half with DCT, half with random training vectors
-        '''
-        print('initializing dictionary...')
-        init = np.ndarray((n_components, self.timesteps))
+        print"initializing dictionary..."
+        init = np.zeros((n_components, data_train.shape[1]))
         
-        for j in range(int(n_components/2)):
-            init[j,:] = np.cos(np.pi/init.shape[1]*(j+0.5))
-        for i in range(int(n_components/2), n_components):
+        for k in range(int(n_components/2)):
+            for n in range(data_train.shape[1]):
+                init[k,n] = np.cos((np.pi/data_train.shape[1])*n*(k+0.5))
+                
+        for i in range(int(n_components/2),n_components):
             init[i,:] = data_train[int(random.uniform(0,data_train.shape[0])),:]
+            
+        self.init = init
+        
         return init
     
     def get_training_data(self):
@@ -138,29 +164,36 @@ class mri_reconstruction:
     def get_testing_data(self):
         return
     
-    def train_dictionary(self, imgs_train, n_components, alpha, n_iter, batch_size, verbose):
+    def train_dictionary(self, imgs_train, n_components=50, alpha=1, transform_alpha=1, 
+                         n_iter=250, batch_size=1000, verbose=0):
         # normalize images
         imgs_norm = self.normalize(imgs_train)
         # transform to (samples, features) shape
         data_train = self.imgs_to_data(imgs_norm)
-        print("training dictionary...")
+        
+        init = self.initialize_dictionary(n_components, data_train)
+        
+        print"training dictionary..."
         t0 = time.time()
-        self.dico = MiniBatchDictionaryLearning(n_components, alpha, n_iter,
-                                                fit_algorithm='lars', n_jobs=1,
-                                                batch_size=1000, verbose=2)
-        self.V = self.dico.fit(data_train).components_
-        print("done in %.1fs." %(time.time()-t0))
-        return
+        self.dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha, 
+                                                n_iter = n_iter, batch_size=batch_size, 
+                                                dict_init=init, verbose=verbose, 
+                                                transform_alpha = transform_alpha,
+                                                fit_algorithm='lars', transform_algorithm='omp')
+        self.dico.fit(data_train)
+        self.V = self.dico.components_
+        print"dictionary trained in %.1fs." %(time.time()-t0)
+        pass
     
     def test_dictionary(self, imgs_test):
         imgs_norm = self.normalize(imgs_test)
         data_test = self.imgs_to_data(imgs_norm)
-        print('testing dictionary...')
+        print"testing dictionary..."
         t0 = time.time()
-        self.code = self.dico.transform(data_test)
-        recs = np.dot(self.code,self.V)
+        self.code_test = self.dico.transform(data_test)
+        recs = np.dot(self.code_test,self.V)
         recs = self.data_to_imgs(recs)
-        print("done in %.1fs." %(time.time()-t0))
+        print"dictionary tested in %.1fs." %(time.time()-t0)
         return recs
     
     def imgs_error(self, img1, img2):
@@ -171,63 +204,177 @@ class mri_reconstruction:
     def total_error(self, imgs_ref, imgs_rec):
         err_tot = 0
         for i in range(imgs_ref.shape[3]):
-            for j in range(self.timesteps):
+            for j in range(imgs_ref.shape[2]):
                 err_tot += self.imgs_error(imgs_ref[:,:,j,i], imgs_rec[:,:,j,i])
         return err_tot
     
-    def error_difference(self, imgs, imgs_rec, imgs_rec_dic):
-        return self.total_error(imgs,imgs_rec) - self.total_error(imgs,imgs_rec_dic)
+    def error_difference(self, imgs, imgs_test, imgs_rec):
+        '''
+        Calculates the error of (imgs - imgs_rec) - (imgs - imgs_test).
+        All parameters must have the same size.
+        
+        Parameters
+        ----------
+        imgs : Reference Image, fully sampled
+        
+        imgs_test : Inverse transformed undersampled image (with artifacts)
+        
+        imgs_rec : With dictionary and sparse coding reconstructed image
+        '''
+        return self.total_error(imgs,imgs_rec) - self.total_error(imgs,imgs_test)
     
     def sparsity(self, A):
         A = np.ravel(A)
-        return round(1-float(np.count_nonzero(A))/len(A), 2)
+        return round(1-float(np.count_nonzero(A))/len(A), 4)
     
-    def minimize_alpha(self):
-        return
+    def minimize_alpha_train(self, imgs_train, imgs_test, imgs_test_ref, 
+                             alpha_train=np.linspace(0,1,num=10), n_components=50, 
+                             n_iter=250, batch_size=1000, verbose=0, return_vectors=False):
+        print"minimizing alpha_train..."
+        t0 = time.time()
+        err_diff = np.zeros(alpha_train.shape)
+
+        for i in range(len(alpha_train)):
+
+            if verbose > 1:
+                print i
+
+            self.train_dictionary(imgs_train, n_components=n_components, 
+                                  alpha=alpha_train[i], n_iter=n_iter, 
+                                  batch_size=batch_size, verbose=verbose)
+            recs = self.test_dictionary(imgs_test)
+            err_diff[i] = self.error_difference(obj.normalize(imgs_test_ref), 
+                                                obj.normalize(imgs_test), recs)
+        
+        print"alpha_train minimized in %.1fs" %(time.time()-t0)
+        
+        min_index = np.argmin(err_diff)
+        min_err = err_diff[min_index]
+        alpha_min = alpha_train[min_index]
+        
+        if return_vectors:
+            return min_err, alpha_min, err_diff, alpha_train
+        
+        return min_err, alpha_min
+    
+    def minimize_alpha_test(self, imgs_train, imgs_test, imgs_test_ref, 
+                            alpha_test=np.linspace(0,1,num=10), n_components=50, 
+                            n_iter=250, batch_size=1000, verbose=0):
+        print"minimizing alpha_test..."
+        t0 = time.time()
+        err_diff = np.zeros(alpha_test.shape)
+        
+        for i in range(len(alpha_test)):
+            
+            if verbose > 1:
+                print i
+            
+            self.train_dictionary(imgs_train, n_components=n_components, 
+                                  alpha=alpha_test[i], n_iter=n_iter, batch_size=batch_size, 
+                                  verbose=verbose)
+            
+            recs = self.test_dictionary(imgs_test)
+            err_diff[i] = self.error_difference(obj.normalize(imgs_test_ref), 
+                                                obj.normalize(imgs_test), recs)
+        
+        min_index = np.argmin(err_diff)
+        min_err = err_diff[min_index]
+        
+        print"alpha_test minimized in %.1fs" %(time.time()-t0)
+        
+        return alpha_test, min_err
     
     def create_plots(self):
-        plt.figure(figsize=(20,20))
-        plt.subplot(1,4,1)
-        plt.imshow(ref_imgs_test[:,:,0,0], cmap='gray')
-        plt.subplot(1,4,2)
-        plt.imshow(np.log(k_mskd[:,:,0,0]), cmap = 'gray')
-        plt.subplot(1,4,3)
-        plt.imshow(imgs_test[:,:,0,0], cmap= 'gray')
-        plt.subplot(1,4,4)
-        plt.imshow(recs[:,:,0,0], cmap = 'gray')
         pass
       
-obj = mri_reconstruction()
+
+if __name__ == '__main__':
+    obj = mri_reconstruction()
+        
+    # Training amount
+    percentage = 0.8
     
-# Training amount
-percentage = 0.8
+    # Variables
+    #imgs_train = obj.imgs[:,:,:,:int(percentage*obj.persons)]
+    imgs_train = obj.imgs[:,:,:,:2]
+    #ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons]
+    ref_imgs_test = obj.imgs[:,:,:,:2]
+    k_test = obj.transform(ref_imgs_test)
+    k_mskd = obj.mask_imgs(k_test, 'masks_200_0_200.mat')
+    imgs_test = obj.inverse_transform(k_mskd)
+    
+    # Minimize alpha
+    #alpha_min, err_min, err_diff, alpha = obj.minimize_alpha_train(imgs_train, imgs_test, ref_imgs_test, 
+    #                                                               alpha_train=np.linspace(1,2,num=15), n_components=50, 
+    #                                                               n_iter=250, batch_size=1000, verbose=1, return_vectors=True)
 
-# Gauss curve parameters for masking: a = radius, b = offset, c = std deviation
-a = 100
-b = 0
-c = 300
-
-# Training
-imgs_train = obj.imgs[:,:,:,:int(percentage*obj.persons)]
-obj.train_dictionary(imgs_train, n_components=50, alpha=0.005, n_iter=250, batch_size=1000, verbose=2)
-
-# Testing
-ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons]
-k_test = obj.transform(ref_imgs_test)
-k_mskd = obj.mask_imgs(a, b, c, k_test, masks, verbose=True)
-imgs_test = obj.inverse_transform(k_mskd)
-recs = obj.test_dictionary(imgs_test)
-
-# calculate error
-err_diff = obj.error_difference(ref_imgs_test, imgs_test, recs)
-print(err_diff)
-#printing
-plt.figure(figsize=(20,20))
-plt.subplot(1,4,1)
-plt.imshow(ref_imgs_test[:,:,0,0])
-plt.subplot(1,4,2)
-plt.imshow(np.log(k_mskd[:,:,0,0]))
-plt.subplot(1,4,3)
-plt.imshow(imgs_test[:,:,0,0])
-plt.subplot(1,4,4)
-plt.imshow(recs[:,:,0,0])
+    # Training
+    obj.train_dictionary(imgs_train, n_components=50, alpha=0.2, transform_alpha=1, n_iter=250, batch_size=1000, verbose=1)
+    
+    # Testing
+    recs = obj.test_dictionary(imgs_test)
+    
+    # calculate error
+    #err_diff = obj.error_difference(obj.normalize(ref_imgs_test), obj.normalize(imgs_test), recs)
+    
+#    def print_imgs():
+#        print"------------------------------------------------"
+#        print" "
+#        
+#        #printing
+#        plt.figure()
+#        plt.subplot(1,3,1)
+#        plt.imshow(obj.init, cmap='gray')
+#        plt.title("Dictionary Initialization")
+#        plt.subplot(1,3,2)
+#        plt.imshow(obj.V, cmap='gray')
+#        plt.title("Dictionary")
+#        plt.subplot(1,3,3)
+#        plt.imshow(abs(obj.code_test[0:50,:]), cmap='gray')
+#        plt.title("code for first 50 Pixels")
+#        
+#        plt.figure(figsize=(15,15))
+#        plt.subplot(2,4,1)
+#        person1 = 0
+#        time1 = 0
+#        plt.imshow(ref_imgs_test[:,:,time1,person1], cmap='gray')
+#        plt.title("Reference")
+#        plt.subplot(2,4,2)
+#        plt.imshow(np.log(abs(k_mskd[:,:,time1,person1])), cmap='gray')
+#        plt.title("Masked k-space")
+#        plt.subplot(2,4,3)
+#        plt.imshow(imgs_test[:,:,time1,person1], cmap='gray')
+#        plt.title("Test image")
+#        plt.subplot(2,4,4)
+#        plt.imshow(recs[:,:,time1,person1], cmap='gray')
+#        plt.title("Reconstructed image with dictionary")
+#        
+#        plt.subplot(2,4,5)
+#        person2 = 10
+#        time2 = 0
+#        plt.imshow(ref_imgs_test[:,:,time2,person2], cmap='gray')
+#        plt.title("Reference")
+#        plt.subplot(2,4,6)
+#        plt.imshow(np.log(abs(k_mskd[:,:,time2,person2])), cmap='gray')
+#        plt.title("Masked k-space")
+#        plt.subplot(2,4,7)
+#        plt.imshow(imgs_test[:,:,time2,person2], cmap='gray')
+#        plt.title("Test image")
+#        plt.subplot(2,4,8)
+#        plt.imshow(recs[:,:,time2,person2], cmap='gray')
+#        plt.title("Reconstructed image with dictionary")
+#        
+#        plt.figure(figsize=(8,8))
+#        plt.subplot(1,3,1)
+#        plt.imshow(ref_imgs_test[:,int(obj.cols/2),:,person1],cmap='gray')
+#        plt.title("Reference")
+#        plt.subplot(1,3,2)
+#        plt.imshow(imgs_test[:,int(obj.cols/2),:,person1], cmap='gray')
+#        plt.title("Inverse transform")
+#        plt.subplot(1,3,3)
+#        plt.imshow(recs[:,int(obj.cols/2),:,person1],cmap='gray')
+#        plt.title("Dictionary Reconstruction")
+#    
+#        pass
+#
+#print_imgs()

@@ -6,6 +6,7 @@ Created on Thu Mar 30 14:10:49 2017
 """
 
 import numpy as np
+import scipy as sp
 
 def create_mask(undersampling, shape, mask_type, sigma=30):
     '''
@@ -42,3 +43,6 @@ def create_mask(undersampling, shape, mask_type, sigma=30):
     mask = np.array([mask]*shape[1]).T
                          
     return mask
+
+def create_poisson_disc_masks(a,b,c, *shape):
+    
