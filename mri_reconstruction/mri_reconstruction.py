@@ -133,7 +133,7 @@ class mri_reconstruction:
             masks = np.zeros((imgs.shape))
             for t in range(imgs.shape[2]):
                 for p in range(imgs.shape[3]):
-                    masks[:,:,t,p] = np.random.choice((0,1), size=(imgs.shape[0],imgs.shape[1]), p=(1-p_zeros, p_zeros))
+                    masks[:,:,t,p] = np.random.choice((0,1), size=(imgs.shape[0],imgs.shape[1]), p=(p_zeros, 1-p_zeros))
         
         
         t0 = time.time()
@@ -164,8 +164,8 @@ class mri_reconstruction:
     
     def total_error(self, imgs_ref, imgs_rec):
         err_tot = 0
-        for i in range(imgs_ref.shape[3]):
-            for j in range(imgs_ref.shape[2]):
+        for i in range(imgs_rec.shape[3]):
+            for j in range(imgs_rec.shape[2]):
                 err_tot += self.imgs_error(imgs_ref[:,:,j,i], imgs_rec[:,:,j,i])
         return err_tot
     
@@ -337,29 +337,38 @@ if __name__ == '__main__':
     # Training amount
     percentage = 0.8
     
-    # Variables
-    imgs_train = obj.imgs[:,:,:,:int(percentage*obj.persons)].copy()
-    ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons].copy()
-    k_test = obj.transform(ref_imgs_test)
-    k_mskd = obj.mask_imgs(k_test, 'masks_200_0_200.mat', method='uniform', p_zeros=0.8)
-    imgs_test = obj.inverse_transform(k_mskd)
+    undersampling=np.linspace(0,1,num=20)
+    err_diff = np.zeros(undersampling.shape)
     
-    # Minimize alpha
-    #alpha_min, err_min, err_diff, alpha = obj.minimize_alpha_train(imgs_train, imgs_test, ref_imgs_test, 
-    #                                                               alpha_train=np.linspace(1,2,num=15), n_components=50, 
-    #                                                               n_iter=250, batch_size=1000, verbose=1, return_vectors=True)
-
+    imgs_train = obj.imgs[:,:,:,:int(percentage*obj.persons)].copy()
+    
     # Training
     obj.train_dictionary(imgs_train, n_components=50, alpha=0.2, n_iter=250, 
                          batch_size=1000, verbose=1, fit_algorithm='lars')
     
-    # Testing
-    recs = obj.test_dictionary(imgs_test[:,:,:, :2], alpha=0.5, transform_algorithm='lasso_lars')
+    # Variables
+    for i in range(len(undersampling)):
+        
+        ref_imgs_test = obj.imgs[:,:,:,int(percentage*obj.persons):obj.persons].copy()
+        k_test = obj.transform(ref_imgs_test)
+        k_mskd = obj.mask_imgs(k_test, 'masks_200_0_200.mat', method='uniform', p_zeros=undersampling[i])
+        imgs_test = obj.inverse_transform(k_mskd)
+        
+        # Minimize alpha
+        #alpha_min, err_min, err_diff, alpha = obj.minimize_alpha_train(imgs_train, imgs_test, ref_imgs_test, 
+        #                                                               alpha_train=np.linspace(1,2,num=15), n_components=50, 
+        #                                                               n_iter=250, batch_size=1000, verbose=1, return_vectors=True)
+     
+        # Testing
+        recs = obj.test_dictionary(imgs_test[:,:,:,:2], alpha=0.5, transform_algorithm='lasso_lars')
+        
+        # calculate error
+        err_diff[i] = obj.error_difference(obj.normalize(ref_imgs_test), obj.normalize(imgs_test), recs)
     
-    # calculate error
-    #err_diff = obj.error_difference(obj.normalize(ref_imgs_test), obj.normalize(imgs_test), recs)
-    obj.sparsity(obj.code_test)
-    
+    plt.plot(undersampling,err_diff)
+    plt.title("Error vs undersampling")
+    plt.xlabel("undersampling factor")
+    plt.ylabel("Error")
     
     def print_imgs():
         print"------------------------------------------------"
@@ -421,5 +430,5 @@ if __name__ == '__main__':
     
         pass
 
-print_imgs()
+#print_imgs()
 

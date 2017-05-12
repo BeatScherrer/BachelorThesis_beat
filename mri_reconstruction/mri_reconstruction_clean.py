@@ -23,15 +23,15 @@ import enhanced_grid
 
 import matplotlib.pyplot as plt
 
-def normalize(imgs):
+def normalize_imgs(imgs):
     print"normalizing..."
     imgs = imgs / 255
-    #imgs_spat_median = np.median(imgs, axis=(0,1), keepdims=True)
+#   imgs_spat_median = np.median(imgs, axis=(0,1), keepdims=True)
     imgs_spat_std = np.std(imgs, axis=(0,1), keepdims=True)
     imgs_spat_std[imgs_spat_std < 1e-5] = 1e-5
     imgs_tmp_median = np.median(imgs, axis = 2, keepdims=True)
     
-    #imgs -= imgs_spat_median
+#   imgs -= imgs_spat_median
     imgs /= imgs_spat_std
     imgs -= imgs_tmp_median
     
@@ -50,7 +50,7 @@ def inverse_fft_transform(k_imgs):
     imgs = np.real(np.fft.ifft2(np.fft.ifftshift(k_imgs), axes=(0,1)))
     return imgs
 
-def mask_imgs(imgs, fname, method='uniform', p_zeros=0.5):
+def mask_imgs(imgs, method='uniform', p_zeros=0.5):
     print"masking imgs..."
     
     if method == 'uniform':
@@ -68,6 +68,7 @@ def mask_imgs(imgs, fname, method='uniform', p_zeros=0.5):
     return imgs
 
 def imgs_to_data(imgs, n_components):
+#   expects a 4 dimensional imgs parameter, make it more generig so a 2D img can be passed
     print"converting imgs to data..."
     data = np.transpose(imgs, (2,0,1,3))
     data = np.reshape(data, (n_components, -1), order='F')
@@ -75,6 +76,7 @@ def imgs_to_data(imgs, n_components):
     return data
 
 def data_to_imgs(data, shape):
+#   expects a 4 dimensional imgs parameter, make it more generig so a 2D img can be passed
     print"converting data to imgs..."
     data = data.T
     imgs = np.reshape(data, (shape[2], shape[0], shape[1], -1), order='F')
@@ -97,22 +99,35 @@ def sparsity(A):
     A = np.ravel(A)
     return 1-float(np.count_nonzero(A))/len(A)
 
-def get_data(imgs, train_amount=0.8, test_amount=0.2, undersampling=0.5, normalize=True):
-    #get random 80% as training images
-    np.random.choice()
-    #get the rest as testing images and process them
+def get_data(imgs, undersampling=0, train_amount=0.8, normalize=True):
     
-    k_test = fft_transform(imgs_test)
-    k_mskd = msks*k_test
+#   Initialization
+    imgs_train = np.empty((imgs.shape[0], imgs.shape[1], imgs.shape[2], int(imgs.shape[3]*train_amount)))
+    imgs_test = np.empty((imgs.shape[0], imgs.shape[1], imgs.shape[2], imgs.shape[3]-int(imgs.shape[3]*train_amount)))
+    imgs_test_ref = imgs_test.copy()
+    
+#   Get random 80% of the images as training images
+    ind_train = np.random.choice(imgs.shape[3], int(imgs.shape[3]*train_amount), replace=False)
+    for i in range(len(ind_train)):
+        imgs_train[:,:,:,i] = imgs[:,:,:,ind_train[i]]
+        
+#   Get the remaining images as testing images and process them
+    ind_test = range(imgs.shape[3])
+    for i in range(len(ind_train)):
+        ind_test.remove(ind_train[i])
+    
+    for i in range(len(ind_test)):
+        imgs_test_ref[:,:,:,i] = imgs[:,:,:,ind_test[i]]
+    
+    k_test = fft_transform(imgs_test_ref)
+    k_mskd = mask_imgs(k_test, method='uniform', p_zeros=undersampling)
     imgs_test = inverse_fft_transform(k_mskd)
-    #get imgs_test_ref
     
-    #normalize all chunks
+#    normalize all sets
     if normalize:
-        imgs_train = normalize(imgs_train)
-        imgs_test = normalize(imgs_test)
-        imgs_test_ref = normalize(imgs_test_ref)
-    
+        imgs_train = normalize_imgs(imgs_train)
+        imgs_test = normalize_imgs(imgs_test)
+        imgs_test_ref = normalize_imgs(imgs_test_ref)
     
     return imgs_train, imgs_test, imgs_test_ref
 
@@ -134,36 +149,42 @@ def initialize_dictionary(n_components, data_train):
 #==============================================================================
 # Variables
 n_components = 40
-undersampling = np.linspace(0,1, num=10)
-err_diff = np.zeros(undersampling.shape)
+undersampling = np.linspace(0,1, num=30)
+undersampling = 0.5
+#err_diff = np.zeros(undersampling.shape)
 
 # Read
-imgs = sp.io.loadmat('ismrm_ssa_imgs.mat', 'imgs')
-imgs = np.float64(imgs)
+imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
+imgs = np.float64(imgs['imgs'])
+
+
 
 # Preprocess
-for i in range(len(undersampling)):
-    imgs_train, imgs_test, imgs_test_ref = get_data(imgs, train_amount=0.8, test_amount=0.2, 
-                                                    undersampling=undersampling[i], normalize=True)
-    data_train = imgs_to_data(imgs_train)
-    data_test = imgs_to_data(imgs_test)
-    
-    init = initialize_dictionary(n_components, data_train)
-    
-    # learn
-    dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=0.2, alpha_transform=0.5,
-                                       n_iter=250, batch_size=1000, dict_init=None, verbose=0,
-                                       fit_algorithm='lars', transform_algorithm='lasso_lars')
-    dico.fit(data_train)
-    V = dico.components_
-    
-    # Test
-    code = dico.transform(data_test)
-    recs = np.dot(code, V)
-    recs = data_to_imgs(recs)
-    
-    err_diff[i] = total_error(imgs_test_ref, recs) - total_error(imgs_test_ref, imgs_test)
-    code_sparsity = sparsity(code)
+
+imgs_train, imgs_test, imgs_test_ref = get_data(imgs, train_amount=0.8, 
+                                                undersampling=undersampling, normalize=True)
+data_train = imgs_to_data(imgs_train, n_components)
+data_test = imgs_to_data(imgs_test[:,:,:,0], n_components)
+
+init = initialize_dictionary(n_components, data_train)
+
+#   learn
+dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=0.2,
+                                   n_iter=250, batch_size=1000, dict_init=None, verbose=0,
+                                   fit_algorithm='lars', transform_algorithm='lasso_lars')
+dico.fit(data_train)
+V = dico.components_
+
+#   Test
+dico.alpha_transform=0.5
+code = dico.transform(data_test)
+recs = np.dot(code, V)
+recs = data_to_imgs(recs)
+
+err_diff = total_error(imgs_test_ref, recs) - total_error(imgs_test_ref, imgs_test)
+code_sparsity = sparsity(code)
+
+plt.imshow(recs)
 
 
 
