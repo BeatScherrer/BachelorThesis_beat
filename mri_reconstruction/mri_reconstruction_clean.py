@@ -57,7 +57,7 @@ def mask_imgs(imgs, method='uniform', p_zeros=0.5):
         masks = np.zeros((imgs.shape))
         for t in range(imgs.shape[2]):
             for p in range(imgs.shape[3]):
-                masks[:,:,t,p] = np.random.choice((0,1), size=(imgs.shape[0],imgs.shape[1]), p=(1-p_zeros, p_zeros))
+                masks[:,:,t,p] = np.random.choice((0,1), size=(imgs.shape[0],imgs.shape[1]), p=(p_zeros, 1-p_zeros))
     
     
     t0 = time.time()
@@ -70,6 +70,13 @@ def mask_imgs(imgs, method='uniform', p_zeros=0.5):
 def imgs_to_data(imgs, n_components):
 #   expects a 4 dimensional imgs parameter, make it more generig so a 2D img can be passed
     print"converting imgs to data..."
+
+    if len(imgs.shape) < 4:
+        data = np.transpose(imgs, (2,0,1))
+        data = np.reshape(data, (n_components, -1), order='F')
+        data = data.T
+        return data
+    
     data = np.transpose(imgs, (2,0,1,3))
     data = np.reshape(data, (n_components, -1), order='F')
     data = data.T
@@ -78,7 +85,13 @@ def imgs_to_data(imgs, n_components):
 def data_to_imgs(data, shape):
 #   expects a 4 dimensional imgs parameter, make it more generig so a 2D img can be passed
     print"converting data to imgs..."
+    
     data = data.T
+    
+    if data.shape[0] == shape[2] * shape[0]**2:
+        imgs = np.reshape(data, (shape[2], shape[0], shape[1]), order='F')
+        return imgs
+        
     imgs = np.reshape(data, (shape[2], shape[0], shape[1], -1), order='F')
     imgs = np.transpose(imgs,(1,2,0,3))
     return imgs
@@ -149,42 +162,79 @@ def initialize_dictionary(n_components, data_train):
 #==============================================================================
 # Variables
 n_components = 40
-undersampling = np.linspace(0,1, num=30)
 undersampling = 0.5
-#err_diff = np.zeros(undersampling.shape)
+train_amount = 0.8
+
+# Training Parameters
+batch_size = 1000
+n_iter = 250
+
+# Algorithms
+fit_algorithm='lars'
+transform_algorithm='lasso_lars'
+
+# Sparsity Parameter
+alpha_train = 0.2
+alpha_test = 0.5
+# Output amount
+verbose = 0
+
 
 # Read
 imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
 imgs = np.float64(imgs['imgs'])
 
 
-
 # Preprocess
 
-imgs_train, imgs_test, imgs_test_ref = get_data(imgs, train_amount=0.8, 
-                                                undersampling=undersampling, normalize=True)
+imgs_train, imgs_test, imgs_test_ref = get_data(imgs, train_amount=train_amount, undersampling=undersampling)
+
+imgs_test = imgs_test[:,:,:,:4]
+imgs_train = imgs_train[:,:,:,:2]
+
 data_train = imgs_to_data(imgs_train, n_components)
-data_test = imgs_to_data(imgs_test[:,:,:,0], n_components)
+data_test = imgs_to_data(imgs_test, n_components)
 
 init = initialize_dictionary(n_components, data_train)
 
-#   learn
-dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=0.2,
-                                   n_iter=250, batch_size=1000, dict_init=None, verbose=0,
-                                   fit_algorithm='lars', transform_algorithm='lasso_lars')
+
+# Train
+dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha_train,
+                                   n_iter=n_iter, batch_size=batch_size, dict_init=init, verbose=verbose,
+                                   fit_algorithm=fit_algorithm, transform_algorithm=transform_algorithm)
 dico.fit(data_train)
 V = dico.components_
 
-#   Test
-dico.alpha_transform=0.5
+
+# Test
+dico.alpha_transform = alpha_test
 code = dico.transform(data_test)
 recs = np.dot(code, V)
-recs = data_to_imgs(recs)
-
-err_diff = total_error(imgs_test_ref, recs) - total_error(imgs_test_ref, imgs_test)
-code_sparsity = sparsity(code)
-
-plt.imshow(recs)
+recs = data_to_imgs(recs, imgs_test.shape)
 
 
+#code_sparsity = sparsity(code)
 
+
+# Plot
+plt.plot()
+plt.title("")
+plt.xlabel("")
+plt.ylabel("PSNR")
+
+plt.figure(figsize=(20,20))
+plt.subplot(1,3,1)
+plt.imshow(imgs_test_ref[:,int(imgs_test_ref.shape[1]/2),:,0])
+plt.title("Ground")
+plt.xlabel('time')
+plt.ylabel('y')
+plt.subplot(1,3,2)
+plt.imshow(imgs_test[:,int(imgs_test.shape[1]/2),:,0])
+plt.title("Aliased")
+plt.xlabel('time')
+plt.ylabel('y')
+plt.subplot(1,3,3)
+plt.imshow(recs[:,int(recs.shape[1]/2),:,0])
+plt.title("Reconstruction")
+plt.xlabel('time')
+plt.ylabel('y')
