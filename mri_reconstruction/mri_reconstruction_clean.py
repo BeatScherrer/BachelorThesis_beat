@@ -53,7 +53,6 @@ def create_masks(shape, undersampling, method, full_center=False, k=8, export_ma
     
     k = int(k/2)
     masks = np.zeros((shape))
-    mask = np.zeros(shape[:2])
     
     if method == 'uniform':
         for t in range(shape[2]):
@@ -68,16 +67,20 @@ def create_masks(shape, undersampling, method, full_center=False, k=8, export_ma
                     masks[:,i,t,p] = mask
     
     if method == 'gaussian_lines':
-        threshhold = sp.stats.norm.ppf(undersampling)
+        if full_center:
+            threshhold=sp.stats.norm.ppf(undersampling)
+        else:
+            threshhold = sp.stats.norm.ppf(undersampling)
+            
         for t in range(shape[2]):
-            for p in range(imgs.shape[3]):
+            for p in range(shape[3]):
                 mask = np.random.randn(shape[0])
                 for i in range(len(mask)):
                     if mask[i] < threshhold:
                         mask[i] = 0
                     else:
                         mask[i] = 1  
-                for j in range(imgs.shape[1]):
+                for j in range(shape[1]):
                     masks[:,j,t,p] = mask
     
     if full_center:
@@ -156,10 +159,9 @@ def peak_signal_to_noise_ratio(imgs_ref, recs):
     s = imgs_ref.shape
     P = s[0]*s[1]*s[2]
     
-    err = 0
-    err = np.linalg.norm(imgs_ref - recs)
+    err = np.linalg.norm(imgs_ref-recs)/s[3]
     
-    psnr = 10*np.log10(1/(err/P))
+    psnr = 10*np.log10(1/(err**2/P))
         
     return psnr
 
@@ -214,7 +216,7 @@ def plot_mat(fname):
     return
 
 #==============================================================================
-# Variables
+# Variabless
 n_components = 40
 undersampling = 0.5
 train_amount = 0.8
@@ -222,8 +224,6 @@ train_amount = 0.8
 # Training Parameters
 batch_size = 1000
 n_iter = 250
-
-n_jobs = 1
 
 # Algorithms
 fit_algorithm='lars'
@@ -268,32 +268,35 @@ data_train = imgs_to_data(imgs_train, imgs.shape[2])
 
 init = initialize_dictionary(n_components, data_train)
 
+
+#alpha_test = alpha_test_vec[i]
+# Train
+dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha_train,
+                                   n_iter=n_iter, batch_size=batch_size, dict_init=init.copy(), verbose=verbose,
+                                   fit_algorithm=fit_algorithm, transform_algorithm=transform_algorithm)
+print"fitting data..."
+#for j in range(int(data_train.shape[0]/dico.batch_size)):
+#    data_batch = data_train[dico.batch_size*j:dico.batch_size*(j+1)]
+#    dico.partial_fit(data_batch)
+dico.fit(data_train)
+print"...done fitting."
+
+V = dico.components_
+
+# Test
+k_test = fft_transform(imgs_test_ref)
+k_mskd, masks = mask_imgs(k_test, method='uniform', full_center=True, k=8, 
+                          undersampling=undersampling, n_gauss=100, variance=30, 
+                          return_masks=True)
+imgs_test = inverse_fft_transform(k_mskd)
+imgs_test = normalize(imgs_test)
+data_test = imgs_to_data(imgs_test, imgs.shape[2])
+    
 for i in range(resolution):
-    alpha_test = alpha_test_vec
-    # Train
-    dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha_train,
-                                       n_iter=n_iter, n_jobs=n_jobs, batch_size=batch_size, dict_init=init.copy(), verbose=verbose,
-                                       fit_algorithm=fit_algorithm, transform_algorithm=transform_algorithm)
-    print"fitting data..."
-    #for j in range(int(data_train.shape[0]/dico.batch_size)):
-    #    data_batch = data_train[dico.batch_size*j:dico.batch_size*(j+1)]
-    #    dico.partial_fit(data_batch)
-    dico.fit(data_train)
-    
-    V = dico.components_
-    
-    # Test
-    k_test = fft_transform(imgs_test_ref)
-    k_mskd, masks = mask_imgs(k_test, method='uniform', full_center=True, k=8, 
-                              undersampling=undersampling, n_gauss=100, variance=30, 
-                              return_masks=True)
-    imgs_test = inverse_fft_transform(k_mskd)
-    imgs_test = normalize(imgs_test)
-    data_test = imgs_to_data(imgs_test, imgs.shape[2])
-    
     dico.transform_alpha = alpha_test
     print"encoding data..."
     code = dico.transform(data_test)
+    print"...done encoding."
     recs = np.dot(code, V)
     recs = data_to_imgs(recs, imgs_test.shape)
     
