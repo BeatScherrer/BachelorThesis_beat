@@ -7,7 +7,7 @@ Created on Thu May 11 16:39:26 2017
 Versions:
 --------
 Anaconda Python 2.7
-Scikit-learn 0.19dev0
+Scikit-learn 0.18.1
 
 """
 
@@ -191,45 +191,40 @@ def learn_dictionary(imgs, n_components, alpha, fit_algorithm, n_iter, batch_siz
     D = dico.fit(training_data).components_
     return D, init
 
-def reconstruct_dataset(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
-                        n_iter, n_jobs=1, verbose=0):
+def reconstruct(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
+                n_iter=20, n_jobs=1, verbose=0):
 
-    def reconstruct(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
-                    n_iter, n_jobs=1, verbose=0):
-
-        Nt = masks.shape[2]
-        rows, cols = masks.shape[0:2]
-        X = np.zeros((rows,cols,Nt))
-        coder = SparseCoder(D, transform_algorithm=p_transform_algorithm, transform_n_nonzero_coefs=p_transform_n_nonzero_coefs,
-                            transform_alpha=p_transform_alpha, n_jobs=n_jobs)
-        errs = np.zeros(Nt)
+    Nt = masks.shape[2]
+    rows, cols = masks.shape[0:2]
+    X = np.zeros((rows,cols,Nt))
+    coder = SparseCoder(D, transform_algorithm=p_transform_algorithm, transform_n_nonzero_coefs=p_transform_n_nonzero_coefs,
+                        transform_alpha=p_transform_alpha, n_jobs=n_jobs)
+    errs = np.zeros(n_iter)
+    if verbose:
+        print 'alpha_transform= ', p_transform_alpha
+    for i in range(Nt):
+        X[:,:,i] = ifft_transform(b[:,:,i])
         if verbose:
-            print 'alpha_transform= ', p_transform_alpha
-        for i in range(Nt):
-            X[:,:,i] = ifft_transform(b[:,:,i])
-            print 'i:', i
-            for it in range(n_iter):
-                U = coder.transform(imgs_to_data(X, b.shape[2]))
-                DU = np.dot(U, D)
-                print 'DU:', DU.shape
-                DU = data_to_imgs(DU, X.shape[:3])
-                DU = np.squeeze(DU)
-                print 'DU imgs:', DU.shape
-                print 'X shape:', X.shape
-                # Force the measured k-space data to persist
-                for i in range(Nt):
-                    f0 = b[:,:,i]
-                    print 'f0:', f0.shape
-                    f = fft_transform(DU[:,:,i])
-                    print 'f:', f.shape
-                    f[masks[:,:,i]] = f0[masks[:,:,i]]
-                    X[:,:,i] = np.abs(ifft_transform(f))
-                fval = np.sum((X-DU)**2)
-                errs[it] = fval
-                if verbose:
-                    print it, ':', fval
-        return X, DU, U, errs
-    
+            print 'timestep:', i
+        for it in range(n_iter):
+            U = coder.transform(imgs_to_data(X, b.shape[2]))
+            DU = np.dot(U, D)
+            DU = data_to_imgs(DU, X.shape[:3]) # DU.shape = (128,128,25,1), why is the 4th index 1?
+            DU = np.squeeze(DU)
+            # Force the measured k-space data to persist
+            for i in range(Nt):
+                f0 = b[:,:,i]
+                f = fft_transform(DU[:,:,i])
+                f[masks[:,:,i]] = f0[masks[:,:,i]]
+                X[:,:,i] = ifft_transform(f)
+            fval = np.sum((X-DU)**2)
+            errs[it] = fval
+            if verbose:
+                print 'iter', it, ':', fval
+    return X, DU, U, errs
+   
+def reconstruct_dataset(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
+                        n_iter=20, n_jobs=1, verbose=0):
     X = np.zeros(b.shape)
     for i in range(b.shape[3]):
         xtmp, dutmp, utmp, errs = reconstruct(b[:,:,:,i], masks[:,:,:,i], D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
@@ -237,93 +232,105 @@ def reconstruct_dataset(b, masks, D, p_transform_alpha, p_transform_n_nonzero_co
         X[:,:,:,i] = xtmp
     return X, utmp, errs
 
-def test_run(return_info=False):   
-    # Parameters
-    n_components=60
-    undersampling = 0.5
-    train_amount = 0.8
+#def test_run(return_info=False):   
+# Parameters
+n_components=60
+undersampling = 0.5
+train_amount = 0.8
+
+# Training parameters
+batch_size = 1000
+n_iter = 250
+
+# Algorithms
+fit_algorithm = 'lars'
+transform_algorithm = 'omp'
+
+# Regularization paramters
+alpha_train = 0.2
+
+#Output
+verbose = 0
+
+# Read
+imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
+imgs = np.float64(imgs['imgs'])
+imgs /= max(np.ravel(imgs))
+
+# Preprocess
+imgs_train, imgs_test_ref = get_imgs(imgs, train_amount=train_amount)
+imgs_train = imgs[:,:,:,:300]
+imgs_test_ref = imgs[:,:,:,300:302]
+# Train
+D, init = learn_dictionary(imgs_train, n_components, alpha_train, fit_algorithm, n_iter,
+                     batch_size, verbose=verbose)
+# Test
+k_test = fft_transform(imgs_test_ref)
+b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8, 
+                      undersampling=undersampling, n_gauss=100, variance=30, 
+                      return_masks=True)
+imgs_test = ifft_transform(b)
+
+recs, du, utemp, errs = reconstruct(b[:,:,:,0], masks[:,:,:,0], D, None, 5, transform_algorithm, n_iter=5, n_jobs=1, verbose=1)
+
+print 'Reconstruction Error:', np.sum((imgs_test_ref[:,:,:,0]-recs)**2)
+print 'Zerofield Error:', np.sum((imgs_test_ref[:,:,:,0]-imgs_test[:,:,:,0])**2)
+
+# Output chain
+plt.figure(figsize=(10,10))
+plt.subplot(1,2,1)
+plt.imshow(D)
+plt.subplot(1,2,2)
+plt.imshow(abs(utemp[:10,:]))
+
+# Error vs iteration
+plt.figure(figsize=(10,10))
+plt.plot(errs)
+
+# spatial images
+plt.figure(figsize=(10,10))
+plt.subplot(1,3,1)
+plt.imshow(imgs_test_ref[:,:,0,0])
+plt.title('ground')
+plt.subplot(1,3,2)
+plt.imshow(imgs_test[:,:,0,0])
+plt.title('test image')
+plt.subplot(1,3,3)
+plt.imshow(recs[:,:,0])
+plt.title('reconstruction')
+
+# Slice through time
+plt.figure(figsize=(10,10))
+plt.subplot(1,3,1)
+plt.imshow(imgs_test_ref[:,int(imgs_test_ref.shape[1]/2),:,0])
+plt.title("Ground")
+plt.xlabel('time')
+plt.ylabel('y')
+plt.subplot(1,3,2)
+plt.imshow(imgs_test[:,int(imgs_test.shape[1]/2),:,0])
+plt.title("Aliased")
+plt.xlabel('time')
+plt.ylabel('y')
+plt.subplot(1,3,3)
+plt.imshow(recs[:,int(recs.shape[1]/2),:,0])
+plt.title("Reconstruction")
+plt.xlabel('time')
+plt.ylabel('y')
+
+# Show Dynamic Plots
+plt.figure(figsize=(10,10))
+plt.plot(imgs_test_ref[int(imgs_test_ref.shape[1]/2),:,0,0])
+plt.plot(imgs_test[int(imgs_test.shape[1]/2),:,0,0])
+plt.plot(recs[int(recs.shape[1]),:,0,0])
     
-    # Training parameters
-    batch_size = 1000
-    n_iter = 250
-    
-    # Algorithms
-    fit_algorithm = 'lars'
-    transform_algorithm = 'omp'
-    
-    # Regularization paramters
-    alpha_train = 0.2
-    
-    #Output
-    verbose = 2
-    
-    # Read
-    imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
-    imgs = np.float64(imgs['imgs'])
-    imgs /= 2000.
-    
-    # Preprocess
-    imgs_train, imgs_test_ref = get_imgs(imgs, train_amount=train_amount)
-      
-    # Train
-    D, init = learn_dictionary(imgs_train, n_components, alpha_train, fit_algorithm, n_iter,
-                         batch_size, verbose=verbose)
-    # Test
-    k_test = fft_transform(imgs_test_ref)
-    b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8, 
-                          undersampling=undersampling, n_gauss=100, variance=30, 
-                          return_masks=True)
-    imgs_test = ifft_transform(b)
-    
-    recs, utemp, errs = reconstruct_dataset(b[:,:,:,:2], masks, D, None, 5, transform_algorithm, 20, n_jobs=1, verbose=1)
-    
-    # Output chain
-    plt.figure(figsize=(10,10))
-    plt.subplot(1,2,1)
-    plt.imshow(D)
-    plt.subplot(1,2,2)
-    plt.imshow(abs(utemp[:10,:]))
-    
-    # Error vs iteration
-    plt.figure(figsize=(10,10))
-    plt.plot(errs)
-    
-    # spatial images
-    plt.figure(figsize=(10,10))
-    plt.subplot(1,3,1)
-    plt.imshow(imgs_test_ref[:,:,0,0])
-    plt.title('ground')
-    plt.subplot(1,3,2)
-    plt.imshow(imgs_test[:,:,0,0])
-    plt.title('test image')
-    plt.subplot(1,3,3)
-    plt.imshow(recs[:,:,0,0])
-    plt.title('reconstruction')
-    
-    # Slice through time
-    plt.figure(figsize=(10,10))
-    plt.subplot(1,3,1)
-    plt.imshow(imgs_test_ref[:,int(imgs_test_ref.shape[1]/2),:,0])
-    plt.title("Ground")
-    plt.xlabel('time')
-    plt.ylabel('y')
-    plt.subplot(1,3,2)
-    plt.imshow(imgs_test[:,int(imgs_test.shape[1]/2),:,0])
-    plt.title("Aliased")
-    plt.xlabel('time')
-    plt.ylabel('y')
-    plt.subplot(1,3,3)
-    plt.imshow(recs[:,int(recs.shape[1]/2),:,0])
-    plt.title("Reconstruction")
-    plt.xlabel('time')
-    plt.ylabel('y')
-    if return_info:
-        return imgs_train, imgs_test, recs, D, init
-    return
+#    if return_info:
+#        return imgs_train, imgs_test_ref, imgs_test, b, recs, D, init
+#    return imgs_train, imgs_test_ref, imgs_test, b, recs, D, init
+
+
 
 #==============================================================================
 # main  algorithm
 #==============================================================================
 
-if __name__=='__main__':
-    imgs_train, imgs_test, recs, D, init = test_run(return_info=True)
+#imgs_train, imgs_test_ref, imgs_test, recs, b, D, init = test_run(return_info=True)
