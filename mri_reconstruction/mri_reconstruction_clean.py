@@ -39,11 +39,11 @@ def normalize_data(data):
 
 def fft_transform(imgs):
     k_imgs = np.fft.fft2(imgs, axes=(0,1))
-    k_imgs = np.fft.fftshift(k_imgs)
+    k_imgs = np.fft.fftshift(k_imgs, axes=(0,1))
     return k_imgs
 
 def ifft_transform(k_imgs):
-    k_imgs = np.fft.ifftshift(k_imgs)
+    k_imgs = np.fft.ifftshift(k_imgs, axes=(0,1))
     imgs = abs(np.fft.ifft2(k_imgs, axes=(0,1)))
     return imgs
 
@@ -203,24 +203,22 @@ def reconstruct(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_t
     if verbose:
         print 'alpha_transform= ', p_transform_alpha
     for i in range(Nt):
-        X[:,:,i] = ifft_transform(b[:,:,i])
+        X[:,:,i] = ifft_transform(b)[:,:,i]
+    for it in range(n_iter):
+        U = coder.transform(imgs_to_data(X, b.shape[2]))
+        DU = np.dot(U, D)
+        DU = data_to_imgs(DU, X.shape[:3]) # DU.shape = (128,128,25,1), why is the 4th index 1?
+        DU = np.squeeze(DU)
+        # Force the measured k-space data to persist
+        for j in range(Nt):
+            f0 = b[:,:,j]
+            f = fft_transform(DU[:,:,j])
+            f[masks[:,:,j]] = f0[masks[:,:,j]]
+            X[:,:,j] = ifft_transform(f)
+        fval = np.sum((X-DU)**2)
+        errs[it] = fval
         if verbose:
-            print 'timestep:', i
-        for it in range(n_iter):
-            U = coder.transform(imgs_to_data(X, b.shape[2]))
-            DU = np.dot(U, D)
-            DU = data_to_imgs(DU, X.shape[:3]) # DU.shape = (128,128,25,1), why is the 4th index 1?
-            DU = np.squeeze(DU)
-            # Force the measured k-space data to persist
-            for i in range(Nt):
-                f0 = b[:,:,i]
-                f = fft_transform(DU[:,:,i])
-                f[masks[:,:,i]] = f0[masks[:,:,i]]
-                X[:,:,i] = ifft_transform(f)
-            fval = np.sum((X-DU)**2)
-            errs[it] = fval
-            if verbose:
-                print 'iter', it, ':', fval
+            print 'iter', it, ':', fval
     return X, DU, U, errs
    
 def reconstruct_dataset(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
@@ -260,7 +258,7 @@ imgs /= max(np.ravel(imgs))
 # Preprocess
 imgs_train, imgs_test_ref = get_imgs(imgs, train_amount=train_amount)
 imgs_train = imgs[:,:,:,:300]
-imgs_test_ref = imgs[:,:,:,300:302]
+imgs_test_ref = imgs[:,:,:,310:313]
 # Train
 D, init = learn_dictionary(imgs_train, n_components, alpha_train, fit_algorithm, n_iter,
                      batch_size, verbose=verbose)
@@ -270,6 +268,8 @@ b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8,
                       undersampling=undersampling, n_gauss=100, variance=30, 
                       return_masks=True)
 imgs_test = ifft_transform(b)
+
+print 'imgs_test, b:', np.sum((imgs_test-b)**2)
 
 recs, du, utemp, errs = reconstruct(b[:,:,:,0], masks[:,:,:,0], D, None, 5, transform_algorithm, n_iter=5, n_jobs=1, verbose=1)
 
@@ -312,7 +312,7 @@ plt.title("Aliased")
 plt.xlabel('time')
 plt.ylabel('y')
 plt.subplot(1,3,3)
-plt.imshow(recs[:,int(recs.shape[1]/2),:,0])
+plt.imshow(recs[:,int(recs.shape[1]/2),:])
 plt.title("Reconstruction")
 plt.xlabel('time')
 plt.ylabel('y')
