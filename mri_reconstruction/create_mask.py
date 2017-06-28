@@ -8,7 +8,7 @@ Created on Thu Mar 30 14:10:49 2017
 import numpy as np
 import scipy as sp
 
-def create_mask(undersampling, shape, mask_type, sigma=30):
+def create_mask(undersampling, shape, method='uniform', sigma=30):
     '''
     Parameters:
     -----------
@@ -19,18 +19,11 @@ def create_mask(undersampling, shape, mask_type, sigma=30):
     # uniform distributed
     mu = shape[0]/2
     
-    if mask_type == 'uniform':
-        mask = np.random.choice([0, 1], size=shape[0], p=[undersampling, 1-undersampling])
+    if method == 'uniform':
 
-    # Poisson Mask
-    if mask_type == 'poisson':                     
-        poisson = np.random.poisson(shape[0]/2,shape[0])
-        mask = np.zeros(shape[0])
-        for i in poisson:
-            mask[int(i)] = 1
                        
     # Gaussian Mask
-    if mask_type == 'gaussian':
+    if method == 'gaussian':
         gaussian = sigma * np.random.randn(shape[0]) + mu
         mask = np.zeros(shape[0])
         for i in gaussian:
