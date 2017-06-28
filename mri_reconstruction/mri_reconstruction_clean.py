@@ -24,18 +24,20 @@ from sklearn.decomposition import SparseCoder
 
 import matplotlib.pyplot as plt
 
-def normalize_data(data):
-    print"normalizing..."
-    training_data = data.copy()
-    t_mean = np.mean(training_data, axis = 0, keepdims = True)
-    training_data = training_data - t_mean
-    training_data = training_data - np.mean(training_data, axis = 1, keepdims = True)
-    idxs = np.argsort( np.sum(training_data**2, axis = 1) )
-    training_data = training_data[idxs[50:], :]
-    training_data = training_data / np.std(training_data, axis = 0, keepdims = True)
-    # training_data = training_data / np.std(training_data, axis = 1, keepdims = True)
-    print 'normalization', np.mean(training_data), np.std(training_data)
-    return training_data
+def normalize_imgs(imgs):
+    imgs/=max(np.ravel(imgs))
+    imgs_spat_median = np.median(imgs, axis=(0,1), keepdims=True)
+    imgs_spat_std = np.std(imgs, axis=(0,1), keepdims=True)
+    imgs_spat_std[imgs_spat_std < 1e-5] = 1e-5
+    imgs_tmp_median = np.median(imgs, axis = 2, keepdims=True)
+    
+    imgs -= imgs_spat_median
+    imgs /= imgs_spat_std
+    imgs -= imgs_tmp_median
+    
+    imgs[np.isnan(imgs)]=0
+    
+    return imgs
 
 def fft_transform(imgs):
     k_imgs = np.fft.fft2(imgs, axes=(0,1))
@@ -183,8 +185,8 @@ def export_plot_as_mat(a, b, undersamp, undersamp_type, n_comp, b_s, n_iter, fit
     sp.io.savemat('psnr' + '_' + 'ncomponents' + '.mat', {str(a):a, str(b):b, 'info':info})
     
 def learn_dictionary(imgs, n_components, alpha, fit_algorithm, n_iter, batch_size, n_jobs=1, verbose=0):
+    imgs = normalize_imgs(imgs)
     training_data = imgs_to_data(imgs, imgs.shape[2])
-#    training_data = normalize_data(training_data)
     init = initialize_dictionary(n_components, training_data.copy())
     dico = MiniBatchDictionaryLearning(n_components=n_components, alpha=alpha, fit_algorithm=fit_algorithm, dict_init=init.copy(),
                                        n_iter=n_iter, batch_size=batch_size, verbose=1)
@@ -233,7 +235,7 @@ def reconstruct_dataset(b, masks, D, p_transform_alpha, p_transform_n_nonzero_co
 #def test_run(return_info=False):   
 # Parameters
 n_components=60
-undersampling = 0.5
+undersampling = 0.9
 train_amount = 0.8
 
 # Training parameters
@@ -269,9 +271,9 @@ b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8,
                       return_masks=True)
 imgs_test = ifft_transform(b)
 
-print 'imgs_test, b:', np.sum((imgs_test-b)**2)
+print 'imgs_test, b:', abs(np.sum((imgs_test_ref-b)**2))
 
-recs, du, utemp, errs = reconstruct(b[:,:,:,0], masks[:,:,:,0], D, None, 5, transform_algorithm, n_iter=5, n_jobs=1, verbose=1)
+recs, du, utemp, errs = reconstruct(b[:,:,:,0], masks[:,:,:,0], D, None, 5, transform_algorithm, n_iter=10, n_jobs=1, verbose=1)
 
 print 'Reconstruction Error:', np.sum((imgs_test_ref[:,:,:,0]-recs)**2)
 print 'Zerofield Error:', np.sum((imgs_test_ref[:,:,:,0]-imgs_test[:,:,:,0])**2)
