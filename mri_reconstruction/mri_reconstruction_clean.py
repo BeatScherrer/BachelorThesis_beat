@@ -15,6 +15,7 @@ import numpy as np
 import scipy as sp
 import random
 import time
+import poisson_disc_light as pd
 
 from sklearn.decomposition import MiniBatchDictionaryLearning
 from sklearn.decomposition import SparseCoder
@@ -25,7 +26,6 @@ from sklearn.decomposition import SparseCoder
 import matplotlib.pyplot as plt
 
 def normalize_imgs(imgs):
-    imgs/=max(np.ravel(imgs))
     imgs_spat_median = np.median(imgs, axis=(0,1), keepdims=True)
     imgs_spat_std = np.std(imgs, axis=(0,1), keepdims=True)
     imgs_spat_std[imgs_spat_std < 1e-5] = 1e-5
@@ -36,6 +36,7 @@ def normalize_imgs(imgs):
     imgs -= imgs_tmp_median
     
     imgs[np.isnan(imgs)]=0
+    imgs = imgs / max(np.ravel(imgs))
     
     return imgs
 
@@ -52,27 +53,15 @@ def ifft_transform(k_imgs):
 def create_masks(shape, undersampling, method, full_center=False, k=8, export_masks=False):
     
     k = int(k/2)
-    masks = np.zeros((shape))
+    masks = np.zeros(shape)
     
     if method == 'uniform':
         masks = np.random.random_sample(shape) > undersampling
-        
-    if method == 'gaussian_lines':
-        if full_center:
-            threshhold=sp.stats.norm.ppf(undersampling)
-        else:
-            threshhold = sp.stats.norm.ppf(undersampling)
-            
-        for t in range(shape[2]):
-            for p in range(shape[3]):
-                mask = np.random.randn(shape[0])
-                for i in range(len(mask)):
-                    if mask[i] < threshhold:
-                        mask[i] = 0
-                    else:
-                        mask[i] = 1  
-                for j in range(shape[1]):
-                    masks[:,j,t,p] = mask
+    
+    if method == 'poisson':
+        for i in range(shape[3]):
+            for j in range(shape[2]):
+                masks[:,:,j,i] = pd.poisson_circle(shape[:2])
     
     if full_center:
         for t in range(shape[2]):
@@ -129,35 +118,7 @@ def data_to_imgs(data, shape):
     imgs = np.reshape(data, (shape[2], shape[0], shape[1], -1), order='F')
     imgs = np.transpose(imgs,(1,2,0,3))
     return imgs
-
-def imgs_error(img1, img2):
-    err = np.sqrt(np.sum((img1 - img2) ** 2))
-    err /= (img1.shape[0] * img1.shape[1])
-    return err
-
-def total_error(imgs_ref, imgs_rec):
-    err_tot = 0
-    for i in range(imgs_ref.shape[3]):
-        for j in range(imgs_ref.shape[2]):
-            err_tot += imgs_error(imgs_ref[:,:,j,i], imgs_rec[:,:,j,i])
-    return err_tot
-
-def peak_signal_to_noise_ratio(imgs_ref, recs):
-    '''
-    '''
-    s = imgs_ref.shape
-    P = s[0]*s[1]*s[2]
     
-    err = np.linalg.norm(imgs_ref-recs)/s[3]
-    
-    psnr = 10*np.log10(1/(err**2/P))
-        
-    return psnr
-
-def sparsity(A):
-    A = np.ravel(A)
-    return 1-np.float64(np.count_nonzero(A))/len(A)
-
 def get_imgs(imgs, train_amount=0.8):
     perm = np.random.permutation(imgs.shape[3])
     imgs_train = imgs[:,:,:,perm[:int(train_amount*len(perm))]]
@@ -175,14 +136,6 @@ def initialize_dictionary(n_components, data_train):
         init[i,:] = data_train[int(random.uniform(0,data_train.shape[0])),:]
     
     return init
-
-def export_plot_as_mat(a, b, undersamp, undersamp_type, n_comp, b_s, n_iter, fit_alg, transf_alg, alpha_train, alpha_test, export_info=False):
-    info = ('undersampling' + str(undersamp) + 'undersampling_type' + str(undersamp_type) + 
-            'n_comp=' + str(n_comp) + ' batch_size=' + str(b_s) + 
-            ' n_iter=' + str(n_iter) + ' fit_alg=' + str(fit_alg) + 
-            ' transform_alg=' + str(transf_alg) + ' alpha_train=' + 
-            str(alpha_train) + ' alpha_test=' + str(alpha_test))
-    sp.io.savemat('psnr' + '_' + 'ncomponents' + '.mat', {str(a):a, str(b):b, 'info':info})
     
 def learn_dictionary(imgs, n_components, alpha, fit_algorithm, n_iter, batch_size, n_jobs=1, verbose=0):
     imgs = normalize_imgs(imgs)
@@ -195,7 +148,6 @@ def learn_dictionary(imgs, n_components, alpha, fit_algorithm, n_iter, batch_siz
 
 def reconstruct(b, masks, D, p_transform_alpha, p_transform_n_nonzero_coefs, p_transform_algorithm,
                 n_iter=20, n_jobs=1, verbose=0):
-
     Nt = masks.shape[2]
     rows, cols = masks.shape[0:2]
     X = np.zeros((rows,cols,Nt))
@@ -232,107 +184,194 @@ def reconstruct_dataset(b, masks, D, p_transform_alpha, p_transform_n_nonzero_co
         X[:,:,:,i] = xtmp
     return X, utmp, errs
 
-#def test_run(return_info=False):   
-# Parameters
-n_components=60
-undersampling = 0.9
-train_amount = 0.8
+def imgs_error(img1, img2):
+    err = np.sqrt(np.sum((img1 - img2) ** 2))
+    err /= (img1.shape[0] * img1.shape[1])
+    return err
 
-# Training parameters
-batch_size = 1000
-n_iter = 250
+def total_error(imgs_ref, imgs_rec):
+    err_tot = 0
+    for i in range(imgs_ref.shape[3]):
+        for j in range(imgs_ref.shape[2]):
+            err_tot += imgs_error(imgs_ref[:,:,j,i], imgs_rec[:,:,j,i])
+    return err_tot
 
-# Algorithms
-fit_algorithm = 'lars'
-transform_algorithm = 'omp'
-
-# Regularization paramters
-alpha_train = 0.2
-
-#Output
-verbose = 0
-
-# Read
-imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
-imgs = np.float64(imgs['imgs'])
-imgs /= max(np.ravel(imgs))
-
-# Preprocess
-imgs_train, imgs_test_ref = get_imgs(imgs, train_amount=train_amount)
-imgs_train = imgs[:,:,:,:300]
-imgs_test_ref = imgs[:,:,:,310:313]
-# Train
-D, init = learn_dictionary(imgs_train, n_components, alpha_train, fit_algorithm, n_iter,
-                     batch_size, verbose=verbose)
-# Test
-k_test = fft_transform(imgs_test_ref)
-b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8, 
-                      undersampling=undersampling, n_gauss=100, variance=30, 
-                      return_masks=True)
-imgs_test = ifft_transform(b)
-
-print 'imgs_test, b:', abs(np.sum((imgs_test_ref-b)**2))
-
-recs, du, utemp, errs = reconstruct(b[:,:,:,0], masks[:,:,:,0], D, None, 5, transform_algorithm, n_iter=10, n_jobs=1, verbose=1)
-
-print 'Reconstruction Error:', np.sum((imgs_test_ref[:,:,:,0]-recs)**2)
-print 'Zerofield Error:', np.sum((imgs_test_ref[:,:,:,0]-imgs_test[:,:,:,0])**2)
-
-# Output chain
-plt.figure(figsize=(10,10))
-plt.subplot(1,2,1)
-plt.imshow(D)
-plt.subplot(1,2,2)
-plt.imshow(abs(utemp[:10,:]))
-
-# Error vs iteration
-plt.figure(figsize=(10,10))
-plt.plot(errs)
-
-# spatial images
-plt.figure(figsize=(10,10))
-plt.subplot(1,3,1)
-plt.imshow(imgs_test_ref[:,:,0,0])
-plt.title('ground')
-plt.subplot(1,3,2)
-plt.imshow(imgs_test[:,:,0,0])
-plt.title('test image')
-plt.subplot(1,3,3)
-plt.imshow(recs[:,:,0])
-plt.title('reconstruction')
-
-# Slice through time
-plt.figure(figsize=(10,10))
-plt.subplot(1,3,1)
-plt.imshow(imgs_test_ref[:,int(imgs_test_ref.shape[1]/2),:,0])
-plt.title("Ground")
-plt.xlabel('time')
-plt.ylabel('y')
-plt.subplot(1,3,2)
-plt.imshow(imgs_test[:,int(imgs_test.shape[1]/2),:,0])
-plt.title("Aliased")
-plt.xlabel('time')
-plt.ylabel('y')
-plt.subplot(1,3,3)
-plt.imshow(recs[:,int(recs.shape[1]/2),:])
-plt.title("Reconstruction")
-plt.xlabel('time')
-plt.ylabel('y')
-
-# Show Dynamic Plots
-plt.figure(figsize=(10,10))
-plt.plot(imgs_test_ref[int(imgs_test_ref.shape[1]/2),:,0,0])
-plt.plot(imgs_test[int(imgs_test.shape[1]/2),:,0,0])
-plt.plot(recs[int(recs.shape[1]),:,0,0])
+def peak_signal_to_noise_ratio(imgs_ref, recs):
+    '''
+    '''
+    s = imgs_ref.shape
+    P = s[0]*s[1]*s[2]
     
-#    if return_info:
-#        return imgs_train, imgs_test_ref, imgs_test, b, recs, D, init
-#    return imgs_train, imgs_test_ref, imgs_test, b, recs, D, init
+    err = np.linalg.norm(imgs_ref-recs)/s[3]
+    
+    psnr = 10*np.log10(1/(err**2/P))
+        
+    return psnr
 
+def sparsity(A):
+    A = np.ravel(A)
+    return 1-np.float64(np.count_nonzero(A))/len(A)
 
+def export_plot_as_mat(a, b, undersamp, undersamp_type, n_comp, b_s, n_iter, fit_alg, transf_alg, alpha_train, alpha_test, export_info=False):
+    info = ('undersampling' + str(undersamp) + 'undersampling_type' + str(undersamp_type) + 
+            'n_comp=' + str(n_comp) + ' batch_size=' + str(b_s) + 
+            ' n_iter=' + str(n_iter) + ' fit_alg=' + str(fit_alg) + 
+            ' transform_alg=' + str(transf_alg) + ' alpha_train=' + 
+            str(alpha_train) + ' alpha_test=' + str(alpha_test))
+    sp.io.savemat('psnr' + '_' + 'ncomponents' + '.mat', {str(a):a, str(b):b, 'info':info})
+
+def test_run_single(n_components=60, undersampling=0.7, train_amount=0.8, batch_size=1000, n_iter=250, fit_algorithm='lars', alpha_train=0.2, transform_algorithm='omp', verbose=0):   
+
+    # Read
+    imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
+    imgs = np.float64(imgs['imgs'])
+    imgs = imgs/max(np.ravel(imgs))
+    
+    # Pre Process
+    imgs_train, imgs_test_ref = get_imgs(imgs, train_amount=train_amount)
+    
+    # Train
+    D, init = learn_dictionary(imgs_train, n_components, alpha_train, fit_algorithm, n_iter,
+                         batch_size, verbose=verbose)
+    # Test
+    k_test = fft_transform(imgs_test_ref)
+    b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8, 
+                          undersampling=undersampling, n_gauss=100, variance=30, 
+                          return_masks=True)
+    imgs_test = ifft_transform(b)
+    
+    recs, du, utemp, errs = reconstruct(b[:,:,:,0], masks[:,:,:,0], D, None, 5, transform_algorithm, n_iter=10, n_jobs=1, verbose=1)
+    
+    print 'Reconstruction Error:', np.sum((imgs_test_ref[:,:,:,0]-recs)**2)
+    print 'Zerofield Error:', np.sum((imgs_test_ref[:,:,:,0]-imgs_test[:,:,:,0])**2)
+    print 'Improvement:', np.sum((imgs_test_ref[:,:,:,0]-imgs_test[:,:,:,0])**2)-np.sum((imgs_test_ref[:,:,:,0]-recs)**2)
+    # Output chain
+    plt.figure(figsize=(10,10))
+    plt.subplot(1,2,1)
+    plt.imshow(D)
+    plt.subplot(1,2,2)
+    plt.imshow(abs(utemp[:10,:]))
+    
+    # Error vs iteration
+    plt.figure(figsize=(10,10))
+    plt.plot(errs)
+    
+    # spatial images
+    plt.figure(figsize=(10,10))
+    plt.subplot(1,4,1)
+    plt.imshow(imgs_test_ref[:,:,0,0],cmap='gray')
+    plt.title('ground')
+    plt.subplot(1,4,2)
+    plt.imshow(imgs_test[:,:,0,0],cmap='gray')
+    plt.title('test image')
+    plt.subplot(1,4,3)
+    plt.imshow(recs[:,:,0],cmap='gray')
+    plt.title('reconstruction')
+    plt.subplot(1,4,4)
+    plt.imshow(imgs_test_ref[:,:,0,0]-recs[:,:,:,0],cmap='red')
+    
+    # Slice through time
+    plt.figure(figsize=(10,10))
+    plt.subplot(1,3,1)
+    plt.imshow(imgs_test_ref[:,int(imgs_test_ref.shape[1]/2),:,0])
+    plt.title("Ground")
+    plt.xlabel('time')
+    plt.ylabel('y')
+    plt.subplot(1,3,2)
+    plt.imshow(imgs_test[:,int(imgs_test.shape[1]/2),:,0])
+    plt.title("Aliased")
+    plt.xlabel('time')
+    plt.ylabel('y')
+    plt.subplot(1,3,3)
+    plt.imshow(recs[:,int(recs.shape[1]/2),:])
+    plt.title("Reconstruction")
+    plt.xlabel('time')
+    plt.ylabel('y')
+    
+    # Show Dynamic Plots
+    plt.figure(figsize=(10,10))
+    plt.plot(imgs_test_ref[int(imgs_test_ref.shape[1]/2),:,0,0], label='reference')
+    plt.plot(imgs_test[int(imgs_test.shape[1]/2),:,0,0], label='test')
+    plt.plot(recs[int(recs.shape[1]/2),:,0], label='recs')
+    plt.legend()
+
+def test_run(n_components=60, undersampling=0.7, train_amount=0.8, batch_size=1000, n_iter=250, fit_algorithm='lars', alpha_train=0.2, transform_algorithm='omp', verbose=0):   
+
+    # Read
+    imgs = sp.io.loadmat('ismrm_ssa_imgs.mat')
+    imgs = np.float64(imgs['imgs'])
+    imgs = imgs/max(np.ravel(imgs))
+    
+    # Pre Process
+    imgs_train, imgs_test_ref = get_imgs(imgs, train_amount=train_amount)
+    
+    # Train
+    D, init = learn_dictionary(imgs_train, n_components, alpha_train, fit_algorithm, n_iter,
+                         batch_size, verbose=verbose)
+    # Test
+    k_test = fft_transform(imgs_test_ref)
+    b, masks = mask_imgs(k_test, method='uniform', full_center=False, k=8, 
+                          undersampling=undersampling, n_gauss=100, variance=30, 
+                          return_masks=True)
+    imgs_test = ifft_transform(b)
+    
+    recs, utemp, errs = reconstruct_dataset(b, masks, D, None, 5, transform_algorithm, n_iter=10, n_jobs=1, verbose=1)
+    
+    print 'Reconstruction Error:', np.sum((imgs_test_ref-recs)**2)
+    print 'Zerofield Error:', np.sum((imgs_test_ref-imgs_test)**2)
+    print 'Improvement:', np.sum((imgs_test_ref-imgs_test)**2)-np.sum((imgs_test_ref-recs)**2)
+    # Output chain
+    plt.figure(figsize=(10,10))
+    plt.subplot(1,2,1)
+    plt.imshow(D)
+    plt.subplot(1,2,2)
+    plt.imshow(abs(utemp[:10,:]))
+    
+    # Error vs iteration
+    plt.figure(figsize=(10,10))
+    plt.plot(errs)
+    
+    # spatial images
+    plt.figure(figsize=(10,10))
+    plt.subplot(1,3,1)
+    plt.imshow(imgs_test_ref[:,:,0,0])
+    plt.title('ground')
+    plt.subplot(1,3,2)
+    plt.imshow(imgs_test[:,:,0,0])
+    plt.title('test image')
+    plt.subplot(1,3,3)
+    plt.imshow(recs[:,:,0,0])
+    plt.title('reconstruction')
+    
+    # Slice through time
+    plt.figure(figsize=(10,10))
+    plt.subplot(1,3,1)
+    plt.imshow(imgs_test_ref[:,int(imgs_test_ref.shape[1]/2),:,0])
+    plt.title("Ground")
+    plt.xlabel('time')
+    plt.ylabel('y')
+    plt.subplot(1,3,2)
+    plt.imshow(imgs_test[:,int(imgs_test.shape[1]/2),:,0])
+    plt.title("Aliased")
+    plt.xlabel('time')
+    plt.ylabel('y')
+    plt.subplot(1,3,3)
+    plt.imshow(recs[:,int(recs.shape[1]/2),:,0])
+    plt.title("Reconstruction")
+    plt.xlabel('time')
+    plt.ylabel('y')
+    
+    # Show Dynamic Plots
+    plt.figure(figsize=(10,10))
+    plt.plot(imgs_test_ref[int(imgs_test_ref.shape[1]/2),:,0,0])
+    plt.plot(imgs_test[int(imgs_test.shape[1]/2),:,0,0])
+    plt.plot(recs[int(recs.shape[1])/2,:,0,0])
 
 #==============================================================================
 # main  algorithm
 #==============================================================================
-
-#imgs_train, imgs_test_ref, imgs_test, recs, b, D, init = test_run(return_info=True)
+if __name__ == '__main__':
+    test_run_single(n_components=60, undersampling=0.7, train_amount=0.8, batch_size=1000, n_iter=250, fit_algorithm='lars',
+                    alpha_train=0.2, transform_algorithm='omp', verbose=0)
+#    test_run(n_components=60, undersampling=0.7, train_amount=0.8, batch_size=1000, n_iter=250, fit_algorithm='lars',
+#             alpha_train=0.2, transform_algorithm='omp', verbose=0)

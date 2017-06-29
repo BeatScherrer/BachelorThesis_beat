@@ -42,8 +42,9 @@ def make_image_grid_from_radius_grid_2(r_grid, min, max):
 	
 	return i_grid
 
-def poisson_circle():
-	w = h = 128
+def poisson_circle((shape)):
+	h = shape[1]
+	w = shape[2]
 	r_grid = Grid2D((w, h))
 	center = (w/2, h/2)
 
